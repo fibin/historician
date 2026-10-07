@@ -1,3 +1,2 @@
 anthropic>=1.11
 requests>=2.32
-requests-oauthlib>=2.0

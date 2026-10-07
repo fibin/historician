@@ -1,8 +1,10 @@
 name: Daily history post
 
 on:
-  schedule:
-    - cron: "0 9 * * *"   # каждый день в 09:00 UTC
+  # Расписание выключено: по умолчанию бот работает на вашем компьютере
+  # на подписке Claude (см. README). Чтобы работать здесь через API, верните:
+  # schedule:
+  #   - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       publish:
@@ -28,17 +30,13 @@ jobs:
       - name: Find story and post
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          X_API_KEY: ${{ secrets.X_API_KEY }}
-          X_API_SECRET: ${{ secrets.X_API_SECRET }}
-          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
-          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
           THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
-          HISTORIAN_LANGUAGE: ${{ vars.HISTORIAN_LANGUAGE || 'русский' }}
+          HISTORIAN_LANGUAGE: ${{ vars.HISTORIAN_LANGUAGE || 'українська' }}
           # Публикация включается переменной репозитория HISTORIAN_PUBLISH=true
           # или галочкой при ручном запуске. По умолчанию — только черновик.
           HISTORIAN_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || vars.HISTORIAN_PUBLISH }}
-        run: python -m historian.main
+        run: python -m historian.main --engine api
       - uses: actions/upload-artifact@v4
         if: always()
         with:
