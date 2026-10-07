@@ -24,15 +24,25 @@ def fit_story(story: dict) -> dict:
     return story
 
 
-def generate(client, entries: list[dict]) -> dict:
+def generate(engine: str, entries: list[dict]) -> dict:
+    """engine: claude-code — подписка через Claude Code, api — Claude API по ключу."""
+    client = None
+    if engine == "api":
+        import anthropic
+        client = anthropic.Anthropic()
     used = history.used_people(entries)
+    summary = history.summary_for_prompt(entries)
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        dossier, urls = research.find_story(client, history.summary_for_prompt(entries))
-        story = writer.write_posts(client, dossier, urls)
+        if engine == "claude-code":
+            from . import claude_code
+            story = claude_code.generate_story(summary)
+        else:
+            dossier, urls = research.find_story(client, summary)
+            story = writer.write_posts(client, dossier, urls)
+            story["dossier"] = dossier
         if story["person"].strip().lower() in used:
             print(f"[{attempt}] {story['person']} уже был недавно, ищу другую историю", file=sys.stderr)
             continue
-        story["dossier"] = dossier
         return fit_story(story)
     raise RuntimeError("Не удалось найти новую историю")
 
@@ -76,6 +86,9 @@ def main(argv=None) -> None:
     ap.add_argument("--from-draft")
     ap.add_argument("--out-dir", default="out")
     ap.add_argument("--refresh-threads-token", action="store_true")
+    ap.add_argument("--engine", choices=["claude-code", "api"],
+                    default=os.environ.get("HISTORIAN_ENGINE", "claude-code"),
+                    help="claude-code — на подписке через Claude Code (по умолчанию), api — через ключ API")
     args = ap.parse_args(argv)
 
     if args.refresh_threads_token:
@@ -90,8 +103,7 @@ def main(argv=None) -> None:
         if story["person"].strip().lower() in history.used_people(entries):
             raise SystemExit(f"{story['person']} уже был недавно, нужна другая история")
     else:
-        import anthropic
-        story = generate(anthropic.Anthropic(), entries)
+        story = generate(args.engine, entries)
         os.makedirs(args.out_dir, exist_ok=True)
         draft = os.path.join(args.out_dir, f"{date.today().isoformat()}.json")
         with open(draft, "w", encoding="utf-8") as f:

@@ -14,8 +14,8 @@
 
 ```bash
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=...
-python -m historian.main                       # только черновик, ничего не публикует
+python -m historian.main                       # черновик через Claude Code (подписка)
+python -m historian.main --engine api          # черновик через Claude API (нужен ANTHROPIC_API_KEY)
 python -m historian.main --from-draft out/2026-10-07.json --publish   # опубликовать проверенный черновик
 python -m historian.main --publish --no-threads                       # только в X
 python -m pytest -q tests                      # тесты (без сети и ключей)
@@ -26,7 +26,7 @@ python -m pytest -q tests                      # тесты (без сети и 
 
 ## Ключи
 
-**Claude API** — `ANTHROPIC_API_KEY` из console.anthropic.com.
+**Claude API** — нужен только для `--engine api`: `ANTHROPIC_API_KEY` из console.anthropic.com.
 
 **X (x.com)** — в developer.x.com создать проект и приложение, в User authentication settings включить
 права *Read and write*, затем сгенерировать Access Token и Secret **после** смены прав.
@@ -39,11 +39,28 @@ python -m pytest -q tests                      # тесты (без сети и 
 Продлить токен до истечения: `python -m historian.main --refresh-threads-token` (выведет новый токен,
 его нужно обновить в секретах).
 
-## Режим подписки (без ключа API)
+## Запуск на своём компьютере (Windows, на подписке Claude)
 
-Ежедневное задание Claude выполняет [ROUTINE.md](ROUTINE.md): Claude сам ищет историю и пишет посты,
-а код в этом репозитории только проверяет черновик, публикует и ведёт журнал.
-Ключ `ANTHROPIC_API_KEY` в этом режиме не нужен, тратятся лимиты подписки Claude.
+В этом режиме историю ищет и пишет **Claude Code**, вошедший в вашу подписку Claude,
+поэтому ключ API не нужен. Тратятся лимиты подписки.
+
+1. Установите [Python 3.12+](https://www.python.org/downloads/) (галочка «Add python.exe to PATH»)
+   и [Git](https://git-scm.com/download/win).
+2. Установите Claude Code и войдите своей подпиской. В PowerShell выполните
+   `irm https://claude.ai/install.ps1 | iex`, затем `claude` и выберите вход через аккаунт Claude.
+3. Скачайте бота и поставьте зависимости:
+   ```powershell
+   git clone https://github.com/fibin/historician
+   cd historian
+   pip install -r requirements.txt
+   copy .env.example .env
+   ```
+4. Пробный запуск, только черновик: `python -m historian.main`. Займёт несколько минут,
+   черновик появится в `out\`.
+5. Ежедневный запуск:
+   `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1 -Time 10:00`.
+   Если компьютер был выключен в это время, бот запустится при следующем включении. Логи лежат в `logs\`.
+6. Когда качество черновиков устроит, впишите ключи X/Threads в `.env` и поставьте `HISTORIAN_PUBLISH=true`.
 
 ## Ежедневный запуск через GitHub Actions (режим API)
 
@@ -65,6 +82,7 @@ historian/
   main.py        запуск, черновик/публикация, повтор при дубле человека
   research.py    промпт исследователя + веб-поиск
   writer.py      промпт автора, JSON-схема постов
+  claude_code.py режим подписки: запуск Claude Code
   llm.py         вызов Claude: стриминг, продолжение долгого поиска, обработка отказа
   textfit.py     подсчёт длины по правилам X и нарезка
   history.py     журнал опубликованного

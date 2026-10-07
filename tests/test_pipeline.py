@@ -24,6 +24,7 @@ def fake_llm(monkeypatch):
         return "ДОСЬЕ", [{"url": "https://example.com/a", "title": "A"}]
 
     stories = iter([dict(STORY, person="Пётр I"), dict(STORY)])
+    monkeypatch.setattr("anthropic.Anthropic", lambda: None)
     monkeypatch.setattr(research, "find_story", find_story)
     monkeypatch.setattr(writer, "write_posts", lambda c, d, u: next(stories))
     return calls
@@ -31,7 +32,7 @@ def fake_llm(monkeypatch):
 
 def test_generate_skips_recent_people_and_fits_lengths(fake_llm):
     entries = [{"person": "Пётр I", "topic": "x", "sources": []}]
-    story = main.generate(None, entries)
+    story = main.generate("api", entries)
     assert story["person"] == "Тихо Браге"
     assert len(fake_llm) == 2 and "Пётр I" in fake_llm[0]
     assert all(len(p) <= 280 for p in story["x_posts"])
@@ -42,7 +43,7 @@ def test_draft_mode_does_not_publish(fake_llm, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "HISTORY_PATH", str(tmp_path / "h.json"))
     monkeypatch.setattr(main, "publish", lambda *a, **k: pytest.fail("published in draft mode"))
     monkeypatch.setattr("anthropic.Anthropic", lambda: None)
-    main.main(["--out-dir", str(tmp_path / "out")])
+    main.main(["--engine", "api", "--out-dir", str(tmp_path / "out")])
     drafts = list((tmp_path / "out").glob("*.json"))
     assert len(drafts) == 1
     assert not (tmp_path / "h.json").exists()
@@ -117,3 +118,25 @@ def test_from_draft_rejects_recent_person_and_fits(tmp_path, monkeypatch):
     with pytest.raises(SystemExit):
         main.main(["--from-draft", str(draft)])
     assert len(main.fit_story(dict(STORY))["x_posts"]) > 3
+
+
+def test_claude_code_engine_reads_structured_output(monkeypatch):
+    from historian import claude_code
+
+    seen = {}
+
+    class Proc:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps({"is_error": False, "structured_output": dict(STORY, dossier="Д")})
+
+    def fake_run(cmd, input, **kw):
+        seen["cmd"], seen["input"] = cmd, input
+        return Proc()
+
+    monkeypatch.setattr(claude_code.shutil, "which", lambda name: "/usr/bin/claude")
+    monkeypatch.setattr(claude_code.subprocess, "run", fake_run)
+    story = claude_code.generate_story("- Пётр I: x")
+    assert story["dossier"] == "Д"
+    assert "--json-schema" in seen["cmd"] and "WebSearch,WebFetch" in seen["cmd"]
+    assert "Пётр I" in seen["input"]

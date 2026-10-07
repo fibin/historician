@@ -1,8 +1,8 @@
 name: Daily history post
 
 on:
-  # Расписание выключено: по умолчанию бот работает как ежедневное задание Claude
-  # на подписке (см. ROUTINE.md). Чтобы работать через API, верните:
+  # Расписание выключено: по умолчанию бот работает на вашем компьютере
+  # на подписке Claude (см. README). Чтобы работать здесь через API, верните:
   # schedule:
   #   - cron: "0 9 * * *"
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
           # Публикация включается переменной репозитория HISTORIAN_PUBLISH=true
           # или галочкой при ручном запуске. По умолчанию — только черновик.
           HISTORIAN_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || vars.HISTORIAN_PUBLISH }}
-        run: python -m historian.main
+        run: python -m historian.main --engine api
       - uses: actions/upload-artifact@v4
         if: always()
         with:
