@@ -12,5 +12,7 @@ def isolated(tmp_path, monkeypatch):
     for k in ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN", "THREADS_USERNAME", "HISTORIAN_ENGINE", "HISTORIAN_PUBLISH"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(threads_pub, "permalink", lambda creds, post_id: f"https://www.threads.net/@x/post/{post_id}")
+    monkeypatch.setattr(threads_pub, "followers", lambda creds: 0)
+    monkeypatch.setattr(threads_pub, "post_insights", lambda creds, post_id: {})
     web.jobs.clear()
     return tmp_path

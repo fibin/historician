@@ -52,3 +52,45 @@ def permalink(creds: ThreadsCredentials, post_id: str) -> str | None:
     r = requests.get(f"{BASE}/{post_id}", params={"fields": "permalink", "access_token": creds.access_token},
                      timeout=30)
     return r.json().get("permalink") if r.ok else None
+
+
+# Статистика. Нужно разрешение threads_manage_insights в приложении Meta и токен, полученный после его добавления.
+POST_METRICS = ("views", "likes", "replies", "reposts", "quotes", "shares")
+
+
+class NoPermission(RuntimeError):
+    """У токена нет нужного разрешения: надо добавить его в приложении Meta и получить новый токен."""
+
+
+def _get(url: str, params: dict) -> dict:
+    r = requests.get(url, params=params, timeout=30)
+    if r.status_code >= 300:
+        try:
+            err = r.json().get("error", {})
+        except ValueError:
+            err = {}
+        code = err.get("code")
+        if code == 10 or (isinstance(code, int) and 200 <= code < 300) or "permission" in str(err.get("message", "")).lower():
+            raise NoPermission(err.get("message") or r.text)
+        raise RuntimeError(f"Threads API {r.status_code}: {r.text}")
+    return r.json()
+
+
+def _value(metric: dict) -> int:
+    if "total_value" in metric:
+        return int(metric["total_value"].get("value") or 0)
+    values = metric.get("values") or [{}]
+    return int(values[-1].get("value") or 0)
+
+
+def post_insights(creds: ThreadsCredentials, post_id: str) -> dict:
+    """Просмотры, лайки, ответы, репосты, цитаты и пересылки поста."""
+    data = _get(f"{BASE}/{post_id}/insights",
+                {"metric": ",".join(POST_METRICS), "access_token": creds.access_token})["data"]
+    return {m["name"]: _value(m) for m in data}
+
+
+def followers(creds: ThreadsCredentials) -> int:
+    data = _get(f"{BASE}/{creds.user_id}/threads_insights",
+                {"metric": "followers_count", "access_token": creds.access_token})["data"]
+    return _value(data[0]) if data else 0

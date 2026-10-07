@@ -70,8 +70,8 @@ def _find(binary: str, required: bool = True) -> str | None:
     return exe
 
 
-def _user_prompt(history_summary: str) -> str:
-    return research.user_prompt(history_summary) + "\n\nКогда досье готово, напиши посты."
+def _user_prompt(history_summary: str, feedback: str = "") -> str:
+    return research.user_prompt(history_summary, feedback) + "\n\nКогда досье готово, напиши посты."
 
 
 def _run(cmd: list[str], stdin: str, timeout: int) -> str:
@@ -104,7 +104,7 @@ def _validate(story: dict) -> dict:
     return story
 
 
-def _claude_code(system: str, history_summary: str, timeout: int) -> dict:
+def _claude_code(system: str, history_summary: str, feedback: str, timeout: int) -> dict:
     cmd = [
         _find("claude"), "-p",
         "--model", os.environ.get("HISTORIAN_CC_MODEL", "opus"),
@@ -114,13 +114,13 @@ def _claude_code(system: str, history_summary: str, timeout: int) -> dict:
         "--json-schema", json.dumps(SCHEMA, ensure_ascii=False),
         "--output-format", "json",
     ]
-    result = json.loads(_run(cmd, _user_prompt(history_summary), timeout))
+    result = json.loads(_run(cmd, _user_prompt(history_summary, feedback), timeout))
     if result.get("is_error") or not result.get("structured_output"):
         raise RuntimeError(f"claude не вернул посты: {result.get('result') or result}")
     return result["structured_output"]
 
 
-def _codex(system: str, history_summary: str, timeout: int) -> dict:
+def _codex(system: str, history_summary: str, feedback: str, timeout: int) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         schema_path = os.path.join(tmp, "schema.json")
         out_path = os.path.join(tmp, "answer.json")
@@ -132,13 +132,13 @@ def _codex(system: str, history_summary: str, timeout: int) -> dict:
         model = os.environ.get("HISTORIAN_CODEX_MODEL")
         if model:
             cmd += ["-m", model]
-        _run(cmd + ["-"], system + "\n\n---\n\n" + _user_prompt(history_summary), timeout)
+        _run(cmd + ["-"], system + "\n\n---\n\n" + _user_prompt(history_summary, feedback), timeout)
         with open(out_path, encoding="utf-8") as f:
             return _parse_json_reply(f.read())
 
 
-def _gemini(system: str, history_summary: str, timeout: int) -> dict:
-    prompt = (system + "\n\n---\n\n" + _user_prompt(history_summary)
+def _gemini(system: str, history_summary: str, feedback: str, timeout: int) -> dict:
+    prompt = (system + "\n\n---\n\n" + _user_prompt(history_summary, feedback)
               + "\n\nОтветь ТОЛЬКО JSON-объектом по этой схеме, без пояснений:\n"
               + json.dumps(SCHEMA, ensure_ascii=False))
     cmd = [_find("gemini"), "--output-format", "json", "--approval-mode", "plan",
@@ -156,7 +156,8 @@ def _gemini(system: str, history_summary: str, timeout: int) -> dict:
 RUNNERS = {"claude-code": _claude_code, "codex": _codex, "gemini": _gemini}
 
 
-def generate_story(engine: str, history_summary: str, theme: str, language: str, timeout: int = 1800) -> dict:
-    story = _validate(RUNNERS[engine](system_prompt(theme, language), history_summary, timeout))
+def generate_story(engine: str, history_summary: str, theme: str, language: str, feedback: str = "",
+                   timeout: int = 1800) -> dict:
+    story = _validate(RUNNERS[engine](system_prompt(theme, language), history_summary, feedback, timeout))
     story["engine"] = engine
     return story

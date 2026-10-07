@@ -17,11 +17,11 @@ STORY = {
 def fake_llm(monkeypatch):
     calls = []
 
-    def find_story(client, summary, theme):
+    def find_story(client, summary, theme, feedback=""):
         calls.append((summary, theme))
         return "ДОСЬЕ", [{"url": "https://example.com/a", "title": "A"}]
 
-    def write_posts(client, dossier, urls, theme, language):
+    def write_posts(client, dossier, urls, theme, language, feedback=""):
         calls.append((theme, language))
         return next(stories)
 

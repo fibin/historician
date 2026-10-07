@@ -44,6 +44,7 @@ def add(entries: list[dict], story: dict, posted: dict) -> list[dict]:
         "date": date.today().isoformat(),
         "subject": subject_of(story),
         "topic": story["topic"],
+        "hook": (story.get("threads_posts") or [""])[0],  # первый пост: по статистике видно, какие начала цепляют
         "sources": story["sources"],
         "engine": story.get("engine"),
         "posted": posted,

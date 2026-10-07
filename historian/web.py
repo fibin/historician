@@ -16,7 +16,7 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import accounts, engines, history, main
+from . import accounts, engines, history, main, stats
 from .config import LANGUAGE, THREADS_LIMIT
 from .publishers import threads as threads_pub
 
@@ -28,6 +28,7 @@ BUSY = ("generating", "publishing")
 _lock = threading.Lock()
 jobs: dict[str, dict] = {}  # по id аккаунта: что сейчас происходит и какой черновик открыт
 schedule = {"supported": os.name == "nt", "status": "unknown"}
+stats_running: set[str] = set()  # аккаунты, для которых сейчас запрашиваем статистику
 
 
 def _published_entry(acc: accounts.Account, story: dict) -> dict | None:
@@ -83,6 +84,23 @@ def job_for(acc: accounts.Account) -> dict:
         return job
 
 
+def refresh_stats(acc: accounts.Account, force: bool = False) -> bool:
+    """Обновляет статистику в фоне, если она устарела (или force). False, если уже обновляется."""
+    with _lock:
+        if acc.id in stats_running or not acc.creds() or not (force or stats.is_stale(acc)):
+            return False
+        stats_running.add(acc.id)
+
+    def worker():
+        try:
+            stats.refresh(acc, force=True)
+        finally:
+            stats_running.discard(acc.id)
+
+    _in_background(worker)
+    return True
+
+
 def engines_info() -> list[dict]:
     return [{"id": k, "label": v["label"], "setup": v["setup"], "available": engines.available(k)}
             for k, v in engines.ENGINES.items()]
@@ -97,7 +115,9 @@ def state(account_id: str | None) -> dict:
                 "auto_publish": a.auto_publish, "post_time": a.post_time,
                 "busy": jobs.get(a.id, {}).get("status") in BUSY} for a in all_accounts]
     elapsed = int(time.time() - job["started"]) if job["status"] in BUSY else 0
-    return {"accounts": summary, "account": acc.public(), "job": {**job, "elapsed": elapsed},
+    refresh_stats(acc)
+    acc_stats = {**stats.summary(acc), "loading": acc.id in stats_running}
+    return {"accounts": summary, "account": acc.public(), "job": {**job, "elapsed": elapsed}, "stats": acc_stats,
             "engines": engines_info(), "schedule": schedule, "limit": THREADS_LIMIT}
 
 
@@ -160,6 +180,7 @@ def save_token(account_id: str, user_id: str, token: str) -> dict:
         raise ValueError(f"@{me.get('username')} уже подключён во вкладке «{twin.name}»")
     accounts.set_token(acc, user_id, token, me.get("username", ""))
     acc.save()
+    refresh_stats(acc, force=True)  # новый токен мог получить доступ к статистике
     return acc.public()
 
 
@@ -300,6 +321,11 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Сначала сохраните токен Threads для этого аккаунта")
                 ok = _run(acc_id, "publishing", lambda job: do_publish(acc_id, job, posts))
                 return self._send(200 if ok else 409, {"ok": ok})
+            if self.path == "/api/stats":
+                acc = accounts.get(acc_id)
+                if not acc.creds():
+                    raise ValueError("Сначала сохраните токен Threads для этого аккаунта")
+                return self._send(200, {"ok": refresh_stats(acc, force=True)})
             if self.path == "/api/schedule":
                 return self._send(200, install_schedule())
             self._send(404, {"error": "not found"})

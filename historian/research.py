@@ -38,19 +38,20 @@ def system_prompt(theme: str) -> str:
     return SYSTEM.replace("{theme}", theme.strip())
 
 
-def user_prompt(history_summary: str) -> str:
+def user_prompt(history_summary: str, feedback: str = "") -> str:
     return (
         "Подготовь сегодняшнюю публикацию.\n\n"
         "Это уже было в этом аккаунте, не повторяй (к предметам из последних двух месяцев не возвращайся вовсе):\n"
         f"{history_summary}"
+        + (f"\n\n{feedback}" if feedback else "")
     )
 
 
-def find_story(client, history_summary: str, theme: str) -> tuple[str, list[dict]]:
+def find_story(client, history_summary: str, theme: str, feedback: str = "") -> tuple[str, list[dict]]:
     response = llm.run(
         client,
         system=system_prompt(theme),
-        user=user_prompt(history_summary),
+        user=user_prompt(history_summary, feedback),
         tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 20}],
         max_tokens=64000,
     )

@@ -14,7 +14,7 @@ import sys
 import traceback
 from datetime import date, datetime
 
-from . import accounts, history, research, writer
+from . import accounts, history, research, stats, writer
 from .config import LANGUAGE, THREADS_LIMIT, ThreadsCredentials, env_flag
 from .textfit import fit, plain_length
 
@@ -45,13 +45,14 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
         client = anthropic.Anthropic()
     used = history.used_subjects(entries)
     summary = history.summary_for_prompt(entries)
+    feedback = stats.feedback_for_prompt(entries)
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if engine != "api":
             from . import engines
-            story = engines.generate_story(engine, summary, theme, language)
+            story = engines.generate_story(engine, summary, theme, language, feedback)
         else:
-            dossier, urls = research.find_story(client, summary, theme)
-            story = writer.write_posts(client, dossier, urls, theme, language)
+            dossier, urls = research.find_story(client, summary, theme, feedback)
+            story = writer.write_posts(client, dossier, urls, theme, language, feedback)
             story["dossier"] = dossier
             story["engine"] = "api"
         if history.key(story) in used:
@@ -62,6 +63,7 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
 
 
 def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
+    stats.refresh(acc)  # свежие цифры, чтобы ИИ видел, что заходит
     return generate(engine or acc.engine, acc.history(), acc.theme, acc.language)
 
 
@@ -128,6 +130,7 @@ def run_due(now: datetime | None = None) -> None:
     now = now or datetime.now()
     for acc in accounts.ensure():
         accounts.refresh_token_if_needed(acc, now.date())
+        stats.refresh(acc, now)
         if not is_due(acc, now):
             continue
         accounts.note_attempt(acc, now.date())
