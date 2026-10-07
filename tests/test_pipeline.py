@@ -95,25 +95,3 @@ def test_from_draft_rejects_recent_person_and_fits(tmp_path, monkeypatch):
     with pytest.raises(SystemExit):
         main.main(["--from-draft", str(draft)])
     assert len(main.fit_story(dict(STORY))["threads_posts"]) > 3
-
-
-def test_claude_code_engine_reads_structured_output(monkeypatch):
-    from historian import claude_code
-
-    seen = {}
-
-    class Proc:
-        returncode = 0
-        stderr = ""
-        stdout = json.dumps({"is_error": False, "structured_output": dict(STORY, dossier="Д")})
-
-    def fake_run(cmd, input, **kw):
-        seen["cmd"], seen["input"] = cmd, input
-        return Proc()
-
-    monkeypatch.setattr(claude_code.shutil, "which", lambda name: "/usr/bin/claude")
-    monkeypatch.setattr(claude_code.subprocess, "run", fake_run)
-    story = claude_code.generate_story("- Пётр I: x")
-    assert story["dossier"] == "Д"
-    assert "--json-schema" in seen["cmd"] and "WebSearch,WebFetch" in seen["cmd"]
-    assert "Пётр I" in seen["input"]

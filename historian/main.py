@@ -24,7 +24,7 @@ def fit_story(story: dict) -> dict:
 
 
 def generate(engine: str, entries: list[dict]) -> dict:
-    """engine: claude-code — подписка через Claude Code, api — Claude API по ключу."""
+    """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу."""
     client = None
     if engine == "api":
         import anthropic
@@ -32,13 +32,14 @@ def generate(engine: str, entries: list[dict]) -> dict:
     used = history.used_people(entries)
     summary = history.summary_for_prompt(entries)
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        if engine == "claude-code":
-            from . import claude_code
-            story = claude_code.generate_story(summary)
+        if engine != "api":
+            from . import engines
+            story = engines.generate_story(engine, summary)
         else:
             dossier, urls = research.find_story(client, summary)
             story = writer.write_posts(client, dossier, urls)
             story["dossier"] = dossier
+            story["engine"] = "api"
         if story["person"].strip().lower() in used:
             print(f"[{attempt}] {story['person']} уже был недавно, ищу другую историю", file=sys.stderr)
             continue
@@ -56,6 +57,26 @@ def publish(story: dict) -> dict:
     return {"threads": ids[0]}
 
 
+def check_not_recent(story: dict, entries: list[dict]) -> None:
+    if story["person"].strip().lower() in history.used_people(entries):
+        raise SystemExit(f"{story['person']} уже был недавно, нужна другая история")
+
+
+def save_draft(story: dict, out_dir: str = "out") -> str:
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"{date.today().isoformat()}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(story, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def publish_and_record(story: dict) -> dict:
+    """Публикует и записывает в журнал. Журнал перечитывается, чтобы не затереть чужие записи."""
+    posted = publish(story)
+    history.save(HISTORY_PATH, history.add(history.load(HISTORY_PATH), story, posted))
+    return posted
+
+
 def print_preview(story: dict) -> None:
     print(f"\n=== {story['person']} — {story['topic']} ===\n")
     for i, p in enumerate(story["threads_posts"], 1):
@@ -69,9 +90,9 @@ def main(argv=None) -> None:
     ap.add_argument("--from-draft")
     ap.add_argument("--out-dir", default="out")
     ap.add_argument("--refresh-threads-token", action="store_true")
-    ap.add_argument("--engine", choices=["claude-code", "api"],
+    ap.add_argument("--engine", choices=["claude-code", "codex", "gemini", "api"],
                     default=os.environ.get("HISTORIAN_ENGINE", "claude-code"),
-                    help="claude-code — на подписке через Claude Code (по умолчанию), api — через ключ API")
+                    help="claude-code (по умолчанию), codex (ChatGPT), gemini — через подписку; api — через ключ Claude API")
     args = ap.parse_args(argv)
 
     if args.refresh_threads_token:
@@ -83,14 +104,10 @@ def main(argv=None) -> None:
     if args.from_draft:
         with open(args.from_draft, encoding="utf-8") as f:
             story = fit_story(json.load(f))
-        if story["person"].strip().lower() in history.used_people(entries):
-            raise SystemExit(f"{story['person']} уже был недавно, нужна другая история")
+        check_not_recent(story, entries)
     else:
         story = generate(args.engine, entries)
-        os.makedirs(args.out_dir, exist_ok=True)
-        draft = os.path.join(args.out_dir, f"{date.today().isoformat()}.json")
-        with open(draft, "w", encoding="utf-8") as f:
-            json.dump(story, f, ensure_ascii=False, indent=2)
+        draft = save_draft(story, args.out_dir)
         print(f"Черновик сохранён: {draft}", file=sys.stderr)
 
     print_preview(story)
@@ -98,8 +115,7 @@ def main(argv=None) -> None:
         print("\nРежим черновика: ничего не опубликовано (добавьте --publish).", file=sys.stderr)
         return
 
-    posted = publish(story)
-    history.save(HISTORY_PATH, history.add(entries, story, posted))
+    posted = publish_and_record(story)
     print("Опубликовано:", json.dumps(posted, ensure_ascii=False), file=sys.stderr)
 
 
