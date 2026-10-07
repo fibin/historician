@@ -16,14 +16,14 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import accounts, engines, history, main, stats
+from . import accounts, engines, history, main, stats, video
 from .config import LANGUAGE, THREADS_LIMIT
 from .publishers import threads as threads_pub
 
 PORT = int(os.environ.get("HISTORIAN_PORT", "8765"))
 PAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 TASK_NAME = "Historian bot"
-BUSY = ("generating", "publishing")
+BUSY = ("generating", "publishing", "video")
 
 _lock = threading.Lock()
 jobs: dict[str, dict] = {}  # по id аккаунта: что сейчас происходит и какой черновик открыт
@@ -63,7 +63,7 @@ def job_for(acc: accounts.Account) -> dict:
     with _lock:
         job = jobs.setdefault(acc.id, {"status": "idle", "message": "", "started": None, "story": None,
                                        "draft": None, "published": False, "published_on": None,
-                                       "link": None, "link_kind": "post"})
+                                       "link": None, "link_kind": "post", "stage": "", "action": ""})
         if job["status"] in BUSY:
             return job
         latest = _latest_draft(acc)
@@ -101,6 +101,19 @@ def refresh_stats(acc: accounts.Account, force: bool = False) -> bool:
     return True
 
 
+def video_path(acc: accounts.Account, draft: str | None) -> str | None:
+    """Видео черновика лежит в accounts/<id>/video/ под тем же именем, что и черновик."""
+    if not draft:
+        return None
+    return os.path.join(acc.folder, "video", os.path.splitext(os.path.basename(draft))[0] + ".mp4")
+
+
+def video_state(acc: accounts.Account, job: dict) -> dict | None:
+    path = video_path(acc, job["draft"])
+    meta = video.info(path) if path else None
+    return meta and {**meta, "name": os.path.basename(path), "mtime": int(os.path.getmtime(path))}
+
+
 def engines_info() -> list[dict]:
     return [{"id": k, "label": v["label"], "setup": v["setup"], "available": engines.available(k)}
             for k, v in engines.ENGINES.items()]
@@ -117,7 +130,8 @@ def state(account_id: str | None) -> dict:
     elapsed = int(time.time() - job["started"]) if job["status"] in BUSY else 0
     refresh_stats(acc)
     acc_stats = {**stats.summary(acc), "loading": acc.id in stats_running}
-    return {"accounts": summary, "account": acc.public(), "job": {**job, "elapsed": elapsed}, "stats": acc_stats,
+    return {"accounts": summary, "account": acc.public(),
+            "job": {**job, "elapsed": elapsed, "video": video_state(acc, job)}, "stats": acc_stats,
             "engines": engines_info(), "schedule": schedule, "limit": THREADS_LIMIT}
 
 
@@ -191,7 +205,7 @@ def _run(account_id: str, status: str, job_fn) -> bool:
     with _lock:
         if job["status"] in BUSY:
             return False
-        job.update(status=status, message="", started=time.time())
+        job.update(status=status, action=status, message="", started=time.time())
 
     def worker():
         try:
@@ -224,6 +238,24 @@ def do_publish(account_id: str, job: dict, posts: list[str], image: int | None =
         job.update(link=posted["link"], link_kind="post")
     else:
         _find_link(acc, job, story, None)
+
+
+def do_video(account_id: str, job: dict) -> None:
+    acc = accounts.get(account_id)
+    if not job["story"] or not job["draft"]:
+        raise ValueError("Сначала сгенерируйте пост")
+    try:
+        video.make(job["story"], acc.engine, acc.theme, acc.language, video_path(acc, job["draft"]),
+                   progress=lambda stage: job.update(stage=stage))
+    finally:
+        job.update(stage="")
+
+
+def open_folder(path: str) -> None:
+    """Проводник Windows с выделенным файлом."""
+    if os.name != "nt":
+        raise ValueError("Открыть папку можно только на Windows")
+    subprocess.Popen(["explorer", "/select,", os.path.abspath(path)])
 
 
 def _powershell(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
@@ -276,6 +308,31 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_file(self, path: str, ctype: str):
+        """Файл целиком или кусок по заголовку Range: браузеру он нужен, чтобы перематывать видео."""
+        size = os.path.getsize(path)
+        start, end = 0, size - 1
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
+        if m and (m[1] or m[2]):
+            start, end = (int(m[1]), int(m[2] or size - 1)) if m[1] else (size - int(m[2]), size - 1)
+            end = min(end, size - 1)
+        self.send_response(206 if m else 200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        if m:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        with open(path, "rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left > 0:
+                chunk = f.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
     def _json(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
         return json.loads(self.rfile.read(n) or b"{}")
@@ -284,6 +341,17 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path == "/":
             return self._send(200, self.page, "text/html; charset=utf-8")
+        if url.path == "/api/video-file":
+            q = parse_qs(url.query)
+            try:
+                acc = accounts.get(q.get("account", [""])[0])
+            except ValueError as e:
+                return self._send(404, {"error": str(e)})
+            name = q.get("name", [""])[0]
+            path = os.path.join(acc.folder, "video", name)
+            if not re.fullmatch(r"[\w-]+\.mp4", name) or not os.path.exists(path):
+                return self._send(404, {"error": "not found"})
+            return self._send_file(path, "video/mp4")
         if url.path == "/api/state":
             try:
                 return self._send(200, state(parse_qs(url.query).get("account", [None])[0]))
@@ -326,6 +394,16 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Такой картинки нет в черновике")
                 ok = _run(acc_id, "publishing", lambda job: do_publish(acc_id, job, posts, image))
                 return self._send(200 if ok else 409, {"ok": ok})
+            if self.path == "/api/video":
+                ok = _run(acc_id, "video", lambda job: do_video(acc_id, job))
+                return self._send(200 if ok else 409, {"ok": ok})
+            if self.path == "/api/video/open":
+                acc = accounts.get(acc_id)
+                path = video_path(acc, job_for(acc)["draft"])
+                if not path or not os.path.exists(path):
+                    raise ValueError("Видео ещё нет")
+                open_folder(path)
+                return self._send(200, {"ok": True})
             if self.path == "/api/stats":
                 acc = accounts.get(acc_id)
                 if not acc.creds():

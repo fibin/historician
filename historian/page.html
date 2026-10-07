@@ -57,6 +57,11 @@ table.stats tr.top td:first-child a{font-weight:600}
 .pic img{width:150px;max-height:190px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
 .pic .cap{font-size:13px;color:var(--muted);flex:1;min-width:0}.pic .cap b{color:var(--ink);font-weight:500;display:block;overflow-wrap:anywhere}
 .pic .row{margin-top:8px}.pic button{font-size:13px;padding:6px 11px}
+.vidbox{border-top:1px solid var(--line);margin-top:18px;padding-top:14px}
+.vid{display:flex;gap:14px;align-items:flex-start}.vid video{width:170px;aspect-ratio:9/16;border-radius:8px;background:#000;flex:none}
+.vid .cap{flex:1;min-width:0;font-size:13px;color:var(--muted)}.vid .cap b{display:block;color:var(--ink);font-size:15px;font-weight:600;margin-bottom:2px}
+.vid textarea{min-height:120px;font-size:13px;margin-top:8px}.vid button{font-size:13px;padding:6px 11px}
+@media (max-width:560px){.vid{flex-direction:column}.vid video{width:100%;max-width:260px}}
 </style></head><body><main>
 <h1>Historian</h1><p class="sub">Генерация и публикация постов в Threads</p>
 
@@ -82,6 +87,8 @@ table.stats tr.top td:first-child a{font-weight:600}
 </ul></li>
 <li><b>Вставьте токен</b> в блок «Аккаунт Threads» и нажмите «Сохранить токен». ID определится сам, а продлевать токен бот будет сам.</li>
 <li>Нажмите <b>«Сгенерировать»</b>, прочитайте посты, при необходимости поправьте, затем <b>«Опубликовать»</b>.</li>
+<li><b>Видео для Shorts, TikTok и Reels</b> (по желанию): один раз установите FFmpeg. В PowerShell: <code>winget install Gyan.FFmpeg</code>,
+затем закройте и снова откройте Historian.bat. После этого у поста появится кнопка «Сделать видео». Фоновая музыка: положите mp3 в папку <code>music</code> рядом с Historian.bat.</li>
 <li><b>Каждый день сам</b> (по желанию): поставьте галочку «Публиковать каждый день сам», выберите время,
 а в блоке «Расписание» внизу нажмите «Включить расписание» (один раз на все аккаунты).</li>
 </ol>
@@ -142,6 +149,7 @@ table.stats tr.top td:first-child a{font-weight:600}
 <script>
 const $ = id => document.getElementById(id);
 let pic = null;  // номер выбранной картинки в черновике или null
+let lastVid = '';
 let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '', lastStats = '', focusTheme = false;
 try { cur = localStorage.getItem('historian.account'); } catch(e) {}
 
@@ -244,7 +252,9 @@ function renderDraft(){
   if(j.published){  // опубликованный пост: только заголовок и ссылка, без списка частей
     d.innerHTML = `<div class="done"><span class="badge">✓ Опубликовано${j.published_on ? ' ' + ddmmyyyy(j.published_on) : ''}</span>
       <p class="subject">${esc(s.subject || s.person || '')}</p><p class="topic">${esc(s.topic)}</p>
-      ${j.link ? `<a class="open" href="${esc(j.link)}" target="_blank" rel="noopener">${j.link_kind === 'profile' ? 'Открыть профиль в Threads' : 'Открыть пост в Threads'} →</a>` : ''}</div>`;
+      ${j.link ? `<a class="open" href="${esc(j.link)}" target="_blank" rel="noopener">${j.link_kind === 'profile' ? 'Открыть профиль в Threads' : 'Открыть пост в Threads'} →</a>` : ''}</div>
+      <div class="vidbox" id="vid"></div>`;
+    lastVid = ''; renderVideo();
     return;
   }
   const eng = st.engines.find(e => e.id === s.engine);
@@ -253,7 +263,9 @@ function renderDraft(){
     <div id="posts"></div>
     <button class="ghost" id="add">+ Добавить пост</button>
     <div class="sources" style="margin-top:14px">${(s.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('')}</div>
-    <div class="row"><button id="pub">Опубликовать</button><span id="pubMsg" class="status"></span></div>`;
+    <div class="row"><button id="pub">Опубликовать</button><span id="pubMsg" class="status"></span></div>
+    <div class="vidbox" id="vid"></div>`;
+  lastVid = ''; renderVideo();
   pic = s.image ?? null; renderPic();
   s.threads_posts.forEach(addPost);
   $('add').onclick = () => { addPost(''); editing = true; };
@@ -272,6 +284,38 @@ function renderPic(){
   if($('picOff')) $('picOff').onclick = () => { pic = null; editing = true; renderPic(); };
   if($('picOn')) $('picOn').onclick = () => { pic = 0; editing = true; renderPic(); };
 }
+function renderVideo(){
+  const box = $('vid'); if(!box) return;
+  const j = st.job, v = j.video, busy = j.status === 'video';
+  const failed = j.status === 'error' && j.action === 'video' ? j.message : '';
+  if(busy && $('vidTime')){ $('vidTime').textContent = `${j.stage || 'Готовлю'}… ${mmss(j.elapsed)}`; }
+  const key = JSON.stringify([v && v.mtime, busy, failed, j.status === 'generating' || j.status === 'publishing']);
+  if(key === lastVid) return; lastVid = key;
+  let html = '';
+  if(busy) html = `<p class="status"><span class="spin"></span><span id="vidTime">${esc(j.stage || 'Готовлю')}… ${mmss(j.elapsed)}</span></p>
+    <p class="hint">Сценарий, озвучка, кадры и сборка занимают несколько минут.</p>`;
+  else if(v) html = `<div class="vid"><video controls preload="metadata" src="/api/video-file?account=${encodeURIComponent(st.account.id)}&name=${encodeURIComponent(v.name)}&t=${v.mtime}"></video>
+    <div class="cap"><b>${esc(v.title)}</b>${v.seconds} сек · голос ${esc(v.voice)}
+    <textarea readonly id="vidDesc"></textarea>
+    <div class="row"><button class="ghost" id="vidCopy">Скопировать описание</button>${st.schedule.supported ? '<button class="ghost" id="vidOpen">Показать в папке</button>' : ''}<button class="ghost" id="vidMake">Сделать заново</button></div>
+    <p class="hint">Загрузите в Shorts, TikTok и Reels. При загрузке отметьте, что в видео синтезированный голос (пункт про ИИ-контент).</p></div></div>`;
+  else html = `<div class="row" style="margin-top:0"><button class="ghost" id="vidMake">Сделать видео</button><span class="status">Вертикальное видео на 35–50 секунд для Shorts, TikTok и Reels</span></div>`;
+  if(failed) html += `<p class="status err">${esc(failed)}</p>`;
+  box.innerHTML = html;
+  if($('vidDesc')) $('vidDesc').value = v.description;
+  if($('vidMake')){
+    $('vidMake').disabled = j.status === 'generating' || j.status === 'publishing';
+    $('vidMake').onclick = async () => {
+      try { await api('/api/video', {id: st.account.id}); lastVid = ''; await refresh(); }
+      catch(e){ box.insertAdjacentHTML('beforeend', `<p class="status err">${esc(e.message)}</p>`); }
+    };
+  }
+  if($('vidCopy')) $('vidCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(v.description); } catch(e) { $('vidDesc').select(); document.execCommand('copy'); }
+    $('vidCopy').textContent = 'Скопировано';
+  };
+  if($('vidOpen')) $('vidOpen').onclick = () => api('/api/video/open', {id: st.account.id}).catch(e => alert(e.message));
+}
 function addPost(text){
   const wrap = document.createElement('div'); wrap.className = 'post';
   wrap.innerHTML = `<textarea></textarea><div class="meta"><span class="n"></span><button class="x">удалить</button></div>`;
@@ -283,7 +327,7 @@ function addPost(text){
   $('posts').appendChild(wrap);
 }
 function renderStatus(){
-  const j = st.job, busy = j.status === 'generating' || j.status === 'publishing';
+  const j = st.job, busy = ['generating', 'publishing', 'video'].includes(j.status);
   const noTheme = !st.account.theme.trim();
   $('gen').disabled = busy || noTheme;
   if($('pub')) $('pub').disabled = busy || !st.account.has_token;
@@ -292,7 +336,7 @@ function renderStatus(){
   if(j.status === 'generating') g.innerHTML = `<span class="spin"></span>Ищу материал и пишу посты… ${mmss(j.elapsed)}`;
   else if(noTheme && !busy) say(g, 'Сначала опишите в настройках ниже, о чём аккаунт.');
   else if(j.status === 'publishing' && p) p.innerHTML = `<span class="spin"></span>Публикую…`;
-  else if(j.status === 'error') say((p && j.story) ? p : g, j.message, 'err');
+  else if(j.status === 'error' && j.action !== 'video') say((p && j.story) ? p : g, j.message, 'err');
   else if(p && !st.account.has_token) say(p, 'Чтобы публиковать, сохраните токен Threads ниже.');
 }
 
@@ -363,6 +407,7 @@ async function refresh(){
   const view = j => JSON.stringify([j.story, j.published, j.published_on, j.link]);
   const changed = !prev || view(prev.job) !== view(st.job);
   if(changed && !editing) renderDraft();
+  else renderVideo();
   renderStatus();
 }
 async function publish(){
