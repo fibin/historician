@@ -39,9 +39,15 @@ python -m pytest -q tests                      # тесты (без сети и 
 Продлить токен до истечения: `python -m historian.main --refresh-threads-token` (выведет новый токен,
 его нужно обновить в секретах).
 
-## Ежедневный запуск через GitHub Actions
+## Режим подписки (без ключа API)
 
-`.github/workflows/daily.yml` запускается каждый день в 09:00 UTC.
+Ежедневное задание Claude выполняет [ROUTINE.md](ROUTINE.md): Claude сам ищет историю и пишет посты,
+а код в этом репозитории только проверяет черновик, публикует и ведёт журнал.
+Ключ `ANTHROPIC_API_KEY` в этом режиме не нужен, тратятся лимиты подписки Claude.
+
+## Ежедневный запуск через GitHub Actions (режим API)
+
+Расписание в `.github/workflows/daily.yml` по умолчанию выключено; чтобы работать через API, раскомментируйте `schedule`.
 
 1. Положите код в репозиторий на GitHub.
 2. *Settings → Secrets and variables → Actions → Secrets*: добавьте все ключи выше.

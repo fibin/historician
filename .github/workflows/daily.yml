@@ -1,8 +1,10 @@
 name: Daily history post
 
 on:
-  schedule:
-    - cron: "0 9 * * *"   # каждый день в 09:00 UTC
+  # Расписание выключено: по умолчанию бот работает как ежедневное задание Claude
+  # на подписке (см. ROUTINE.md). Чтобы работать через API, верните:
+  # schedule:
+  #   - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       publish:

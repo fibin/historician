@@ -106,3 +106,14 @@ def test_threads_container_then_publish(monkeypatch):
     assert [c[0] for c in calls] == ["threads", "threads_publish", "threads", "threads_publish"]
     assert calls[2][1]["reply_to_id"] == ids[0]
     assert calls[1][1]["creation_id"] == "id1"
+
+
+def test_from_draft_rejects_recent_person_and_fits(tmp_path, monkeypatch):
+    draft = tmp_path / "d.json"
+    draft.write_text(json.dumps(STORY, ensure_ascii=False), encoding="utf-8")
+    hist = tmp_path / "h.json"
+    history.save(str(hist), [{"person": "Тихо Браге", "topic": "t", "sources": []}])
+    monkeypatch.setattr(main, "HISTORY_PATH", str(hist))
+    with pytest.raises(SystemExit):
+        main.main(["--from-draft", str(draft)])
+    assert len(main.fit_story(dict(STORY))["x_posts"]) > 3

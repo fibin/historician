@@ -18,6 +18,12 @@ from .textfit import fit, plain_length, x_length
 MAX_ATTEMPTS = 3
 
 
+def fit_story(story: dict) -> dict:
+    story["x_posts"] = fit(story["x_posts"], X_LIMIT, x_length)
+    story["threads_posts"] = fit(story["threads_posts"], THREADS_LIMIT, plain_length)
+    return story
+
+
 def generate(client, entries: list[dict]) -> dict:
     used = history.used_people(entries)
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -26,10 +32,8 @@ def generate(client, entries: list[dict]) -> dict:
         if story["person"].strip().lower() in used:
             print(f"[{attempt}] {story['person']} уже был недавно, ищу другую историю", file=sys.stderr)
             continue
-        story["x_posts"] = fit(story["x_posts"], X_LIMIT, x_length)
-        story["threads_posts"] = fit(story["threads_posts"], THREADS_LIMIT, plain_length)
         story["dossier"] = dossier
-        return story
+        return fit_story(story)
     raise RuntimeError("Не удалось найти новую историю")
 
 
@@ -82,7 +86,9 @@ def main(argv=None) -> None:
     entries = history.load(HISTORY_PATH)
     if args.from_draft:
         with open(args.from_draft, encoding="utf-8") as f:
-            story = json.load(f)
+            story = fit_story(json.load(f))
+        if story["person"].strip().lower() in history.used_people(entries):
+            raise SystemExit(f"{story['person']} уже был недавно, нужна другая история")
     else:
         import anthropic
         story = generate(anthropic.Anthropic(), entries)
