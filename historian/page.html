@@ -57,10 +57,12 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 <ul>
 <li>Откройте <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → <b>Create App</b> → сценарий <b>Access the Threads API</b> → создайте приложение. Одно приложение подходит для всех ваших аккаунтов.</li>
 <li><b>Use cases</b> → <b>Access the Threads API</b> → <b>Customize</b> → <b>Permissions</b>: должны быть <code>threads_basic</code> и <code>threads_content_publish</code>.</li>
-<li><b>App roles</b> → <b>Roles</b> → <b>Add People</b> → <b>Threads Tester</b> → впишите имя аккаунта Threads. Второй аккаунт добавьте так же.</li>
+<li><b>App roles</b> → <b>Roles</b> → <b>Add People</b> → роль именно <b>Threads Tester</b> (не Instagram Tester) → впишите имя аккаунта Threads. Второй аккаунт добавьте так же.</li>
 <li>Примите приглашение, войдя в этот аккаунт: <a href="https://www.threads.net" target="_blank" rel="noopener">threads.net</a> → Настройки → Аккаунт → Разрешения для сайтов → Приглашения → Принять.</li>
-<li>Снова <b>Use cases</b> → <b>Customize</b> → <b>Settings</b> → <b>User Token Generator</b> → <b>Generate access token</b> напротив нужного аккаунта → скопируйте.
-Если Threads попросит войти, входите именно в тот аккаунт, для которого нужен токен.</li>
+<li>Проверьте <b>App roles</b> → <b>Roles</b> → <b>Threads Testers</b>: у аккаунта не должно быть пометки <b>Pending</b>. Если она есть, приглашение не принято этим аккаунтом.</li>
+<li><b>Важно:</b> в этом же браузере откройте <a href="https://www.threads.net" target="_blank" rel="noopener">threads.net</a> и войдите в тот аккаунт, для которого нужен токен (из другого аккаунта выйдите). Токен выдаётся тому аккаунту Threads, в который браузер сейчас вошёл.
+Если этот аккаунт не тестировщик, Meta ответит ошибкой <code>The user has not accepted the invite to test the app</code>.</li>
+<li>Снова <b>Use cases</b> → <b>Customize</b> → <b>Settings</b> → <b>User Token Generator</b> → <b>Generate access token</b> → скопируйте.</li>
 </ul></li>
 <li><b>Вставьте токен</b> в блок «Аккаунт Threads» и нажмите «Сохранить токен». ID определится сам, а продлевать токен бот будет сам.</li>
 <li>Нажмите <b>«Сгенерировать»</b>, прочитайте посты, при необходимости поправьте, затем <b>«Опубликовать»</b>.</li>
