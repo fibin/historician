@@ -107,7 +107,8 @@ def test_due_publishes_once_a_day_after_post_time(scheduled):
     main.run_due(datetime(2026, 10, 7, 15, 0))  # компьютер включили только днём
     assert log["posted"] == ["1"] and log["generated"] == [("claude-code", "море", "English")]
     entry = history.load(auto.history_path)[0]
-    assert entry["date"] == date.today().isoformat() and entry["posted"] == {"threads": "99"}
+    assert entry["date"] == date.today().isoformat() and entry["posted"]["threads"] == "99"
+    assert entry["posted"]["link"].endswith("/99")
     assert len(glob.glob(auto.out_dir + "/*.json")) == 1
 
 

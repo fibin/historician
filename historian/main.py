@@ -88,9 +88,21 @@ def save_draft(story: dict, out_dir: str, path: str | None = None) -> str:
     return path
 
 
+def permalink(acc: accounts.Account, post_id: str) -> str | None:
+    """Ссылка на пост в Threads; None, если Threads её не отдал."""
+    from .publishers import threads as threads_pub
+
+    try:
+        return threads_pub.permalink(acc.creds(), post_id)
+    except Exception:
+        return None
+
+
 def publish_and_record(acc: accounts.Account, story: dict) -> dict:
-    """Публикует и записывает в журнал аккаунта. Журнал перечитывается, чтобы не затереть чужие записи."""
+    """Публикует и записывает в журнал аккаунта вместе со ссылкой на пост.
+    Журнал перечитывается, чтобы не затереть чужие записи."""
     posted = publish(story, acc.creds())
+    posted["link"] = permalink(acc, posted["threads"])
     history.save(acc.history_path, history.add(acc.history(), story, posted))
     return posted
 

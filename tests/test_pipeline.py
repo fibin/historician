@@ -66,7 +66,7 @@ def test_publish_from_draft_records_history(tmp_path, monkeypatch):
     main.main(["--from-draft", str(draft), "--publish"])
     saved = history.load(str(tmp_path / "accounts" / "main" / "history.json"))
     assert saved[0]["subject"] == "Тихо Браге"
-    assert saved[0]["posted"] == {"threads": "222"}
+    assert saved[0]["posted"] == {"threads": "222", "link": "https://www.threads.net/@x/post/222"}
 
 
 class FakeResp:

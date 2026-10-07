@@ -12,6 +12,7 @@ import threading
 import time
 import traceback
 import webbrowser
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -29,9 +30,26 @@ jobs: dict[str, dict] = {}  # по id аккаунта: что сейчас пр
 schedule = {"supported": os.name == "nt", "status": "unknown"}
 
 
-def _is_published(acc: accounts.Account, story: dict) -> bool:
-    return any(history.key(e) == history.key(story) and e["topic"] == story.get("topic")
-               for e in acc.history())
+def _published_entry(acc: accounts.Account, story: dict) -> dict | None:
+    """Запись журнала о публикации этого черновика, если он уже вышел."""
+    return next((e for e in reversed(acc.history())
+                 if history.key(e) == history.key(story) and e["topic"] == story.get("topic")), None)
+
+
+def _find_link(acc: accounts.Account, job: dict, story: dict, post_id: str | None) -> None:
+    """Для постов, опубликованных до того, как журнал начал хранить ссылки: спрашиваем Threads.
+    Если не вышло, ведём хотя бы на профиль. Пустая строка значит «ссылки нет»."""
+    link = (main.permalink(acc, post_id) if post_id else None) or ""
+    if not link and acc.threads_username:
+        link, kind = f"https://www.threads.net/@{acc.threads_username}", "profile"
+    else:
+        kind = "post"
+    if job["story"] is story:
+        job.update(link=link, link_kind=kind)
+
+
+def _in_background(fn, *args) -> None:
+    threading.Thread(target=fn, args=args, daemon=True).start()
 
 
 def _latest_draft(acc: accounts.Account) -> str | None:
@@ -43,15 +61,25 @@ def job_for(acc: accounts.Account) -> dict:
     """Состояние аккаунта в окне. Если планировщик успел сделать новый черновик или пост, подхватываем их."""
     with _lock:
         job = jobs.setdefault(acc.id, {"status": "idle", "message": "", "started": None, "story": None,
-                                       "draft": None, "published": False, "link": None})
+                                       "draft": None, "published": False, "published_on": None,
+                                       "link": None, "link_kind": "post"})
         if job["status"] in BUSY:
             return job
         latest = _latest_draft(acc)
         if latest and latest != job["draft"]:
             with open(latest, encoding="utf-8") as f:
-                job.update(story=main.normalize(json.load(f)), draft=latest, link=None)
-        if job["story"]:
-            job["published"] = _is_published(acc, job["story"])
+                job.update(story=main.normalize(json.load(f)), draft=latest, link=None, link_kind="post")
+        if not job["story"]:
+            return job
+        entry = _published_entry(acc, job["story"])
+        job.update(published=entry is not None, published_on=entry and entry.get("date"))
+        if entry and job["link"] is None:
+            posted = entry.get("posted") or {}
+            if posted.get("link"):
+                job["link"] = posted["link"]
+            else:
+                job["link"] = ""  # пока ищем, второй раз не запускаем
+                _in_background(_find_link, acc, job, job["story"], posted.get("threads"))
         return job
 
 
@@ -168,7 +196,11 @@ def do_publish(account_id: str, job: dict, posts: list[str]) -> None:
     posted = main.publish_and_record(acc, story)
     if job["draft"]:
         main.save_draft(story, acc.out_dir, job["draft"])
-    job.update(story=story, published=True, link=threads_pub.permalink(acc.creds(), posted["threads"]))
+    job.update(story=story, published=True, published_on=date.today().isoformat())
+    if posted.get("link"):
+        job.update(link=posted["link"], link_kind="post")
+    else:
+        _find_link(acc, job, story, None)
 
 
 def _powershell(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
