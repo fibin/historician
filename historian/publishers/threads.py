@@ -37,3 +37,18 @@ def refresh_token(access_token: str) -> dict:
                      timeout=30)
     r.raise_for_status()
     return r.json()
+
+
+def whoami(access_token: str) -> dict:
+    """id и username аккаунта, которому принадлежит токен."""
+    r = requests.get(f"{BASE}/me", params={"fields": "id,username", "access_token": access_token},
+                     timeout=30)
+    if r.status_code >= 300:
+        raise RuntimeError(f"Threads API {r.status_code}: {r.text}")
+    return r.json()
+
+
+def permalink(creds: ThreadsCredentials, post_id: str) -> str | None:
+    r = requests.get(f"{BASE}/{post_id}", params={"fields": "permalink", "access_token": creds.access_token},
+                     timeout=30)
+    return r.json().get("permalink") if r.ok else None
