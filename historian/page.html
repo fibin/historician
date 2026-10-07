@@ -117,9 +117,15 @@ const $ = id => document.getElementById(id);
 let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '', focusTheme = false;
 try { cur = localStorage.getItem('historian.account'); } catch(e) {}
 
+// Счётчик изменений: ответ опроса, начатого до того, как изменение дошло до сервера, устарел и не применяется.
+let changes = 0;
 async function api(path, body){
-  const r = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-  const j = await r.json(); if(!r.ok) throw new Error(j.error || 'Ошибка'); return j;
+  const post = body !== undefined;
+  if(post) changes++;
+  try {
+    const r = await fetch(path, post ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {});
+    const j = await r.json(); if(!r.ok) throw new Error(j.error || 'Ошибка'); return j;
+  } finally { if(post) changes++; }
 }
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function mmss(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
@@ -169,6 +175,13 @@ function renderAccount(){
   if(!a.has_token) $('guide').open = true;
   if(focusTheme){ focusTheme = false; $('theme').scrollIntoView({block: 'center'}); $('theme').focus(); }
 }
+// ID, имя и срок токена могут поменяться на сервере (сохранение, продление): показываем сразу.
+function syncToken(old){
+  const a = st.account;
+  if(['threads_user_id', 'threads_username', 'has_token', 'token_expires'].every(k => old[k] === a[k])) return;
+  if(document.activeElement !== $('uid')) $('uid').value = a.threads_user_id;
+  renderToken(); autoHint();
+}
 function renderToken(){
   const a = st.account;
   say($('who'), a.has_token ? ('Подключено' + (a.threads_username ? ': @' + a.threads_username : '')) : 'Токен ещё не сохранён', a.has_token ? 'ok' : 'err');
@@ -179,7 +192,8 @@ function renderToken(){
 async function saveField(field, value){
   const msg = $('setMsg');
   try {
-    st.account = await api('/api/account', {id: st.account.id, [field]: value});
+    const a = await api('/api/account', {id: st.account.id, [field]: value});
+    st.account = a;
     say(msg, 'Сохранено', 'ok'); setTimeout(() => { if(msg.textContent === 'Сохранено') say(msg, ''); }, 2000);
     engineNote(); autoHint(); lastTabs = ''; lastPlan = '';
   } catch(e){
@@ -257,14 +271,16 @@ function renderSchedule(){
 }
 
 async function refresh(){
-  const want = cur;
+  const want = cur, seen = changes;
   let s;
   try { s = await api('/api/state' + (want ? '?account=' + encodeURIComponent(want) : '')); }
   catch(e){ return; }
-  if(want !== cur) return;  // пока ждали ответ, переключились на другой аккаунт
+  // пока ждали ответ, переключились на другой аккаунт или что-то сохранили: ответ устарел
+  if(want !== cur || seen !== changes) return;
   const prev = st; st = s; limit = st.limit; cur = st.account.id;
   renderTabs(); renderSchedule();
   if(shownAcc !== st.account.id){ shownAcc = st.account.id; renderAccount(); renderDraft(); renderStatus(); return; }
+  syncToken(prev.account);
   const changed = !prev || JSON.stringify(prev.job.story) !== JSON.stringify(st.job.story);
   if(changed && !editing) renderDraft();
   renderStatus();
@@ -281,8 +297,8 @@ $('gen').onclick = async () => {
 };
 $('save').onclick = async () => {
   say($('saveMsg'), 'Проверяю токен…');
-  try { st.account = await api('/api/token', {id: st.account.id, user_id: $('uid').value, token: $('tok').value});
-    $('tok').value = ''; $('uid').value = st.account.threads_user_id; renderToken(); autoHint(); lastTabs = ''; lastPlan = '';
+  try { const a = await api('/api/token', {id: st.account.id, user_id: $('uid').value, token: $('tok').value});
+    st.account = a; $('tok').value = ''; $('uid').value = a.threads_user_id; renderToken(); autoHint(); lastTabs = ''; lastPlan = '';
     say($('saveMsg'), 'Сохранено', 'ok'); renderStatus(); }
   catch(e){ say($('saveMsg'), e.message, 'err'); }
 };
@@ -300,7 +316,7 @@ $('newName').onkeydown = e => { if(e.key === 'Enter') $('createAcc').click(); if
 $('cancelAcc').onclick = () => { $('newName').value = ''; $('newAcc').classList.remove('open'); };
 $('sched').onclick = async () => {
   $('sched').disabled = true; say($('schedMsg'), 'Включаю…');
-  try { st.schedule = await api('/api/schedule', {}); lastPlan = ''; renderSchedule(); }
+  try { const sc = await api('/api/schedule', {}); st.schedule = sc; lastPlan = ''; renderSchedule(); }
   catch(e){ say($('schedMsg'), e.message, 'err'); }
   $('sched').disabled = false;
 };
