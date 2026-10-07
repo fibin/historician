@@ -1,0 +1,53 @@
+name: Daily history post
+
+on:
+  schedule:
+    - cron: "0 9 * * *"   # каждый день в 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Опубликовать (иначе только черновик)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency: daily-post
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Find story and post
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          HISTORIAN_LANGUAGE: ${{ vars.HISTORIAN_LANGUAGE || 'русский' }}
+          # Публикация включается переменной репозитория HISTORIAN_PUBLISH=true
+          # или галочкой при ручном запуске. По умолчанию — только черновик.
+          HISTORIAN_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || vars.HISTORIAN_PUBLISH }}
+        run: python -m historian.main
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: draft
+          path: out/
+          if-no-files-found: ignore
+      - name: Save history
+        run: |
+          git config user.name "historian-bot"
+          git config user.email "historian-bot@users.noreply.github.com"
+          git add data/history.json
+          git diff --cached --quiet || (git commit -m "history: $(date -u +%F)" && git push)
