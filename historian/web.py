@@ -271,6 +271,20 @@ def do_publish(account_id: str, job: dict, posts: list[str], image: int | None =
         _find_link(acc, job, story, None)
 
 
+def find_image(account_id: str) -> dict:
+    """Искать картинку заново для открытого черновика (например, сделанного до появления картинок)."""
+    acc = accounts.get(account_id)
+    job = job_for(acc)
+    if job["status"] in BUSY:
+        raise ValueError("Дождитесь, пока закончится текущая работа")
+    if not job["story"] or not job["draft"] or job["published"]:
+        raise ValueError("Картинку можно добавить только к неопубликованному черновику")
+    story = main.add_images(dict(job["story"]))
+    main.save_draft(story, acc.out_dir, job["draft"])
+    job["story"] = story
+    return {"images": story["images"], "image": story["image"], "image_note": story["image_note"]}
+
+
 def do_video(account_id: str, job: dict) -> None:
     acc = accounts.get(account_id)
     if not job["story"] or not job["draft"]:
@@ -425,6 +439,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Такой картинки нет в черновике")
                 ok = _run(acc_id, "publishing", lambda job: do_publish(acc_id, job, posts, image))
                 return self._send(200 if ok else 409, {"ok": ok})
+            if self.path == "/api/image/find":
+                return self._send(200, find_image(acc_id))
             if self.path == "/api/video":
                 ok = _run(acc_id, "video", lambda job: do_video(acc_id, job))
                 return self._send(200 if ok else 409, {"ok": ok})

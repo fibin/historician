@@ -290,8 +290,17 @@ function renderDraft(){
   $('pub').onclick = publish;
 }
 function renderPic(){
-  const opts = st.job.story.images || [], img = pic === null ? null : opts[pic];
-  if(!opts.length){ $('pic').innerHTML = ''; return; }
+  const s = st.job.story, opts = s.images || [], img = pic === null ? null : opts[pic];
+  if(!opts.length){
+    $('pic').innerHTML = `<div class="row" style="margin:0 0 14px"><button class="ghost" id="picFind">Найти картинку</button>`
+      + `<span class="status" id="picMsg">${esc(s.image_note || 'Картинки к этому черновику нет.')}</span></div>`;
+    $('picFind').onclick = async () => {
+      $('picFind').disabled = true; $('picMsg').innerHTML = '<span class="spin"></span>Ищу на Wikimedia Commons…';
+      try { const r = await api('/api/image/find', {id: st.account.id}); Object.assign(st.job.story, r); pic = r.image; renderPic(); }
+      catch(e){ say($('picMsg'), e.message, 'err'); $('picFind').disabled = false; }
+    };
+    return;
+  }
   $('pic').innerHTML = img
     ? `<div class="pic"><a href="${esc(img.page)}" target="_blank" rel="noopener"><img src="${esc(img.preview)}" alt=""></a>
        <div class="cap"><b>${esc(img.title)}</b>${esc([img.author, img.license].filter(Boolean).join(' · '))}

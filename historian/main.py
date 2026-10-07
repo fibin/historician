@@ -39,8 +39,12 @@ def fit_story(story: dict, most: int | None = None) -> dict:
 
 
 def add_images(story: dict) -> dict:
-    """Варианты картинки с Wikimedia Commons; первая выбрана, в окне можно сменить или убрать."""
-    story["images"] = images.find(story.get("image_queries") or [])
+    """Варианты картинки с Wikimedia Commons; первая выбрана, в окне можно сменить или убрать.
+    Последний запрос — сам предмет публикации: точные запросы ИИ иногда ничего не находят."""
+    queries = list(story.get("image_queries") or [])
+    if history.subject_of(story) and history.subject_of(story) not in queries:
+        queries.append(history.subject_of(story))
+    story["images"], story["image_note"] = images.find_explained(queries)
     story["image"] = 0 if story["images"] else None
     return story
 
