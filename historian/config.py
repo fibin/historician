@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 
 MODEL = os.environ.get("HISTORIAN_MODEL", "claude-opus-5-5")
-LANGUAGE = os.environ.get("HISTORIAN_LANGUAGE", "русский")
+LANGUAGE = os.environ.get("HISTORIAN_LANGUAGE", "українська")
 HISTORY_PATH = os.environ.get("HISTORIAN_HISTORY", "data/history.json")
 
 X_LIMIT = 280

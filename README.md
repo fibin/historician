@@ -21,7 +21,7 @@ python -m historian.main --publish --no-threads                       # толь
 python -m pytest -q tests                      # тесты (без сети и ключей)
 ```
 
-Настройки через переменные окружения: `HISTORIAN_LANGUAGE` (язык постов, по умолчанию `русский`),
+Настройки через переменные окружения: `HISTORIAN_LANGUAGE` (язык постов, по умолчанию `українська`),
 `HISTORIAN_MODEL` (по умолчанию `claude-opus-5-5`), `HISTORIAN_PUBLISH=true` (публиковать без флага).
 
 ## Ключи
