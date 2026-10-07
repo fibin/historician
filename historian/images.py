@@ -56,20 +56,33 @@ def search(query: str, limit: int = 10) -> list[dict]:
 
 def find(queries: list[str], want: int = OPTIONS) -> list[dict]:
     """Варианты картинок по запросам ИИ, от самого точного запроса к общему. Без сети — пустой список."""
-    found, seen = [], set()
-    for q in queries[:3]:
-        if not q.strip() or len(found) >= want:
-            continue
+    return find_explained(queries, want)[0]
+
+
+def find_explained(queries: list[str], want: int = OPTIONS) -> tuple[list[dict], str]:
+    """То же, что find, плюс объяснение для окна, если ничего не нашлось."""
+    queries = [q.strip() for q in queries if q and q.strip()]
+    if not queries:
+        return [], "ИИ не подсказал, что искать."
+    found, seen, errors = [], set(), []
+    for q in queries[:4]:
+        if len(found) >= want:
+            break
         try:
-            results = search(q.strip())
+            results = search(q)
         except Exception as e:  # нет сети, Commons недоступен: пост выйдет без картинки
             print(f"Не удалось найти картинку «{q}»: {e}", file=sys.stderr)
+            errors.append(str(e))
             continue
         for img in results:
             if img["page"] not in seen:
                 seen.add(img["page"])
                 found.append(img)
-    return found[:want]
+    if found:
+        return found[:want], ""
+    if errors and len(errors) == len(queries[:4]):
+        return [], f"Wikimedia Commons не ответил: {errors[-1][:200]}"
+    return [], "На Wikimedia Commons ничего не нашлось по запросам: " + "; ".join(queries[:4])
 
 
 def chosen(story: dict) -> dict | None:

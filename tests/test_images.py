@@ -105,3 +105,32 @@ def test_rejected_image_falls_back_to_text(monkeypatch):
     ids = threads_pub.post_thread(threads_pub.ThreadsCredentials("u", "t"), ["one"], image_url="https://u/a.jpg")
     assert [c["media_type"] for c in calls if c["endpoint"] == "threads"] == ["IMAGE", "TEXT"]
     assert calls[-1]["creation_id"] == "id2" and len(ids) == 1
+
+
+def test_find_explains_why_nothing_was_found(monkeypatch):
+    monkeypatch.setattr(images, "search", lambda q, limit=10: [])
+    assert images.find_explained([" ", ""]) == ([], "ИИ не подсказал, что искать.")
+    assert "ничего не нашлось по запросам: moose; Tycho" in images.find_explained(["moose", "Tycho"])[1]
+
+    def offline(q, limit=10):
+        raise OSError("403 Forbidden")
+    monkeypatch.setattr(images, "search", offline)
+    assert images.find_explained(["moose"])[1] == "Wikimedia Commons не ответил: 403 Forbidden"
+
+
+def test_subject_is_the_last_resort_query(monkeypatch):
+    asked = []
+    monkeypatch.setattr(images, "search", lambda q, limit=10: asked.append(q) or ([{"page": q, "url": "u"}] if q == "Тихо Браге" else []))
+    story = main.add_images({"subject": "Тихо Браге", "image_queries": ["moose beer castle"]})
+    assert asked == ["moose beer castle", "Тихо Браге"] and story["image"] == 0 and story["image_note"] == ""
+
+
+def test_window_can_search_again_for_an_old_draft(monkeypatch):
+    from historian import accounts, web
+    acc = accounts.ensure()[0]
+    draft = main.save_draft({"subject": "Тихо Браге", "topic": "t", "threads_posts": ["p"], "sources": []}, acc.out_dir)
+    monkeypatch.setattr(images, "search", lambda q, limit=10: [{"page": "p1", "url": "https://u/1.jpg"}])
+    r = web.find_image(acc.id)
+    assert r["image"] == 0 and r["images"][0]["page"] == "p1"
+    import json
+    assert json.load(open(draft, encoding="utf-8"))["images"][0]["page"] == "p1"
