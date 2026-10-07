@@ -36,5 +36,6 @@ def add(entries: list[dict], story: dict, posted: dict) -> list[dict]:
         "person": story["person"],
         "topic": story["topic"],
         "sources": story["sources"],
+        "engine": story.get("engine"),
         "posted": posted,
     }]

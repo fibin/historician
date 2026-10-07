@@ -12,7 +12,7 @@ import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import dotenv, history, main
+from . import dotenv, engines, history, main
 from .config import HISTORY_PATH, THREADS_LIMIT, ThreadsCredentials
 from .publishers import threads as threads_pub
 
@@ -38,10 +38,25 @@ def load_latest_draft() -> None:
     state.update(story=story, draft=drafts[-1], published=_is_published(story))
 
 
+def current_engine() -> str:
+    name = os.environ.get("HISTORIAN_ENGINE", "claude-code")
+    return name if name in engines.ENGINES else "claude-code"
+
+
 def settings() -> dict:
     return {"user_id": os.environ.get("THREADS_USER_ID", ""),
             "has_token": bool(os.environ.get("THREADS_ACCESS_TOKEN")),
-            "username": os.environ.get("THREADS_USERNAME", "")}
+            "username": os.environ.get("THREADS_USERNAME", ""),
+            "engine": current_engine(),
+            "engines": [{"id": k, "label": v["label"], "setup": v["setup"], "available": engines.available(k)}
+                        for k, v in engines.ENGINES.items()]}
+
+
+def set_engine(name: str) -> dict:
+    if name not in engines.ENGINES:
+        raise ValueError(f"Неизвестный ИИ: {name}")
+    dotenv.save({"HISTORIAN_ENGINE": name})
+    return settings()
 
 
 def _run(status: str, job) -> bool:
@@ -63,7 +78,7 @@ def _run(status: str, job) -> bool:
 
 
 def do_generate() -> None:
-    story = main.generate(os.environ.get("HISTORIAN_ENGINE", "claude-code"), history.load(HISTORY_PATH))
+    story = main.generate(current_engine(), history.load(HISTORY_PATH))
     path = main.save_draft(story, OUT_DIR)
     state.update(story=story, draft=path, published=False, link=None)
 
@@ -125,6 +140,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self._json()
             if self.path == "/api/settings":
                 return self._send(200, save_settings(body.get("user_id", ""), body.get("token", "")))
+            if self.path == "/api/engine":
+                return self._send(200, set_engine(body.get("engine", "")))
             if self.path == "/api/generate":
                 ok = _run("generating", do_generate)
                 return self._send(200 if ok else 409, {"ok": ok})
@@ -168,8 +185,39 @@ a{color:inherit}
 .sources a{display:block;color:var(--muted);font-size:13px;word-break:break-all}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--ink);border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
+select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+details.card summary{cursor:pointer;font-weight:600;list-style:none}details.card summary::-webkit-details-marker{display:none}
+details.card summary::before{content:"▸ ";color:var(--muted)}details[open].card summary::before{content:"▾ "}
+.guide ol{padding-left:22px;margin:12px 0 0}.guide li{margin:0 0 12px}.guide ul{padding-left:18px;margin:6px 0 0;color:var(--muted)}
+code{font:13px ui-monospace,Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;overflow-wrap:break-word}
+.engine-note{font-size:13px;margin-top:6px}
 </style></head><body><main>
 <h1>Historian</h1><p class="sub">Малоизвестные истории для Threads</p>
+
+<details class="card guide" id="guide"><summary>Как начать</summary>
+<ol>
+<li><b>Выберите ИИ</b> в блоке «ИИ для текстов» ниже. Если рядом написано «не установлен», выполните шаги под списком, а потом закройте и снова откройте Historian.bat.</li>
+<li><b>Получите токен Threads</b> (один раз, токен живёт 60 дней):
+<ul>
+<li>Откройте <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → <b>Create App</b> → сценарий <b>Access the Threads API</b> → создайте приложение.</li>
+<li><b>Use cases</b> → <b>Access the Threads API</b> → <b>Customize</b> → <b>Permissions</b>: должны быть <code>threads_basic</code> и <code>threads_content_publish</code>.</li>
+<li><b>App roles</b> → <b>Roles</b> → <b>Add People</b> → <b>Threads Tester</b> → впишите имя вашего аккаунта Threads.</li>
+<li>Примите приглашение: <a href="https://www.threads.net" target="_blank" rel="noopener">threads.net</a> → Настройки → Аккаунт → Разрешения для сайтов → Приглашения → Принять.</li>
+<li>Снова <b>Use cases</b> → <b>Customize</b> → <b>Settings</b> → <b>User Token Generator</b> → <b>Generate access token</b> → скопируйте.</li>
+</ul></li>
+<li><b>Вставьте токен</b> в блок «Аккаунт Threads» и нажмите «Сохранить». ID определится сам.</li>
+<li>Нажмите <b>«Сгенерировать»</b> и подождите несколько минут, пока ИИ ищет историю.</li>
+<li><b>Прочитайте посты</b>, при необходимости поправьте текст, удалите или добавьте пост.</li>
+<li>Нажмите <b>«Опубликовать»</b>. Под кнопкой появится ссылка на пост в Threads.</li>
+<li><b>Каждый день сам</b> (по желанию): в файле <code>.env</code> поставьте <code>HISTORIAN_PUBLISH=true</code>, затем в PowerShell в папке бота выполните
+<code>powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1 -Time 10:00</code>. Бот будет публиковать историю каждый день в 10:00 выбранным ИИ.</li>
+</ol>
+</details>
+
+<section class="card"><h2>ИИ для текстов</h2>
+<select id="engine"></select>
+<div id="engineNote" class="engine-note"></div>
+</section>
 
 <section class="card"><h2>Аккаунт Threads</h2>
 <div id="who" class="status"></div>
@@ -196,15 +244,26 @@ async function api(path, body){
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function mmss(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
 
+function renderEngine(s){
+  const sel = $('engine');
+  sel.innerHTML = s.engines.map(e => `<option value="${e.id}" ${e.id === s.engine ? 'selected' : ''}>${esc(e.label)}${e.available ? '' : ' (не установлен)'}</option>`).join('');
+  const e = s.engines.find(x => x.id === s.engine);
+  $('engineNote').innerHTML = e.available
+    ? '<span class="status ok">Готов к работе</span>'
+    : '<span class="status err">Не установлен. Как подключить:</span><ol>' + e.setup.map(x => `<li>${esc(x)}</li>`).join('') + '</ol>';
+}
 function renderSettings(s){
+  renderEngine(s);
+  if(!s.has_token) $('guide').open = true;
   $('uid').value = $('uid').value || s.user_id;
   $('who').textContent = s.has_token ? ('Подключено' + (s.username ? ': @'+s.username : '')) : 'Токен ещё не сохранён';
   $('who').className = 'status ' + (s.has_token ? 'ok' : 'err');
 }
 function renderDraft(){
   const d = $('draft'); const s = st.story;
-  if(!s){ d.innerHTML = '<p class="status">Черновиков пока нет. Нажмите «Сгенерировать», это займёт несколько минут.</p>'; return; }
-  d.innerHTML = `<p class="person">${esc(s.person)}</p><p class="topic">${esc(s.topic)}</p>
+  if(!s){ d.innerHTML = '<p class="status">Черновиков пока нет. Нажмите «Сгенерировать», это займёт несколько минут.</p>'; $('guide').open = true; return; }
+  const eng = st.settings.engines.find(e => e.id === s.engine);
+  d.innerHTML = `<p class="person">${esc(s.person)}</p><p class="topic">${esc(s.topic)}${eng ? ' · ' + esc(eng.label) : ''}</p>
     <div id="posts"></div>
     <button class="ghost" id="add">+ Добавить пост</button>
     <div class="sources" style="margin-top:14px">${(s.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('')}</div>
@@ -252,6 +311,10 @@ $('gen').onclick = async () => {
   if(st.story && !st.published && !confirm('Текущий черновик не опубликован. Сгенерировать новый?')) return;
   try { editing = false; await api('/api/generate', {}); await refresh(); }
   catch(e){ $('genMsg').className = 'status err'; $('genMsg').textContent = e.message; }
+};
+$('engine').onchange = async e => {
+  try { const s = await api('/api/engine', {engine: e.target.value}); renderEngine(s); st.settings = s; }
+  catch(err){ $('engineNote').innerHTML = `<span class="status err">${esc(err.message)}</span>`; }
 };
 $('save').onclick = async () => {
   $('saveMsg').className = 'status'; $('saveMsg').textContent = 'Проверяю токен…';

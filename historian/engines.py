@@ -1,0 +1,161 @@
+"""Движки, которые ищут историю и пишут посты.
+
+claude-code, codex и gemini работают через консольные программы, вошедшие в вашу подписку
+(Claude, ChatGPT, аккаунт Google), поэтому ключ API не нужен. api — Claude API по ключу.
+Всем движкам дают одни и те же промпты (research.SYSTEM + writer.SYSTEM) и одну схему ответа.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+
+from . import research, writer
+
+SCHEMA = {
+    **writer.SCHEMA,
+    "properties": {**writer.SCHEMA["properties"], "dossier": {"type": "string"}},
+    "required": writer.SCHEMA["required"] + ["dossier"],
+}
+
+SYSTEM = (
+    research.SYSTEM
+    + "\n\n---\nКогда досье готово, сам напиши по нему посты.\n\n"
+    + writer.SYSTEM
+    + "\n\nВ поле dossier положи досье целиком (в формате выше)."
+)
+
+# label — для окна, bin — консольная программа, setup — как установить и войти (для подсказки в окне).
+ENGINES = {
+    "claude-code": {
+        "label": "Claude (подписка Claude)", "bin": "claude",
+        "setup": ["В PowerShell: irm https://claude.ai/install.ps1 | iex",
+                  "Затем выполните claude и войдите своим аккаунтом Claude, после входа окно можно закрыть"],
+    },
+    "codex": {
+        "label": "ChatGPT (подписка ChatGPT, Codex)", "bin": "codex",
+        "setup": ["Установите Node.js с nodejs.org (кнопка LTS)",
+                  "В PowerShell: npm install -g @openai/codex",
+                  "Затем выполните codex и выберите «Sign in with ChatGPT»"],
+    },
+    "gemini": {
+        "label": "Gemini (аккаунт Google)", "bin": "gemini",
+        "setup": ["Установите Node.js с nodejs.org (кнопка LTS)",
+                  "В PowerShell: npm install -g @google/gemini-cli",
+                  "Затем выполните gemini и выберите «Login with Google»"],
+    },
+    "api": {
+        "label": "Claude API (платный ключ)", "bin": None,
+        "setup": ["Ключ создаётся на console.anthropic.com → API Keys, баланс пополняется там же",
+                  "Впишите его в .env строкой ANTHROPIC_API_KEY=..."],
+    },
+}
+
+
+def available(name: str) -> bool:
+    spec = ENGINES[name]
+    if spec["bin"] is None:
+        return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return bool(_find(spec["bin"], required=False))
+
+
+def _find(binary: str, required: bool = True) -> str | None:
+    exe = os.environ.get(f"{binary.upper()}_BIN") or shutil.which(binary)
+    if not exe and required:
+        raise SystemExit(f"Не найдена программа {binary}. Установите её (см. «Как начать» в окне бота) и войдите.")
+    return exe
+
+
+def _user_prompt(history_summary: str) -> str:
+    return (
+        "Найди сегодняшнюю историю и напиши посты.\n\n"
+        "Эти люди и сюжеты уже были, их не повторяй (людей из последних двух месяцев не бери вовсе):\n"
+        f"{history_summary}"
+    )
+
+
+def _run(cmd: list[str], stdin: str, timeout: int) -> str:
+    # Длинный текст идёт через stdin, а в аргументах только короткие строки:
+    # на Windows npm-программы запускаются через .cmd, и cmd.exe портит сложные аргументы.
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=timeout)
+    if proc.returncode != 0:
+        raise RuntimeError(f"{os.path.basename(cmd[0])} завершился с кодом {proc.returncode}: "
+                           f"{(proc.stderr or proc.stdout)[-2000:]}")
+    return proc.stdout
+
+
+def _parse_json_reply(text: str) -> dict:
+    """Достаёт JSON-объект из ответа модели, даже если он обёрнут в ```json ... ```."""
+    m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.S)
+    raw = m.group(1) if m else text[text.find("{"): text.rfind("}") + 1]
+    try:
+        return json.loads(raw)
+    except ValueError:
+        raise RuntimeError(f"Модель вернула не JSON: {text[:500]}")
+
+
+def _validate(story: dict) -> dict:
+    missing = [k for k in SCHEMA["required"] if k not in story]
+    if missing or not isinstance(story.get("threads_posts"), list) or not story["threads_posts"]:
+        raise RuntimeError(f"В ответе модели нет полей: {', '.join(missing) or 'threads_posts'}")
+    return story
+
+
+def _claude_code(history_summary: str, timeout: int) -> dict:
+    cmd = [
+        _find("claude"), "-p",
+        "--model", os.environ.get("HISTORIAN_CC_MODEL", "opus"),
+        "--tools", "WebSearch,WebFetch",
+        "--allowedTools", "WebSearch,WebFetch",
+        "--system-prompt", SYSTEM,
+        "--json-schema", json.dumps(SCHEMA, ensure_ascii=False),
+        "--output-format", "json",
+    ]
+    result = json.loads(_run(cmd, _user_prompt(history_summary), timeout))
+    if result.get("is_error") or not result.get("structured_output"):
+        raise RuntimeError(f"claude не вернул историю: {result.get('result') or result}")
+    return result["structured_output"]
+
+
+def _codex(history_summary: str, timeout: int) -> dict:
+    with tempfile.TemporaryDirectory() as tmp:
+        schema_path = os.path.join(tmp, "schema.json")
+        out_path = os.path.join(tmp, "answer.json")
+        with open(schema_path, "w", encoding="utf-8") as f:
+            json.dump(SCHEMA, f, ensure_ascii=False)
+        cmd = [_find("codex"), "--search", "exec",
+               "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
+               "--cd", tmp, "--output-schema", schema_path, "-o", out_path]
+        model = os.environ.get("HISTORIAN_CODEX_MODEL")
+        if model:
+            cmd += ["-m", model]
+        _run(cmd + ["-"], SYSTEM + "\n\n---\n\n" + _user_prompt(history_summary), timeout)
+        with open(out_path, encoding="utf-8") as f:
+            return _parse_json_reply(f.read())
+
+
+def _gemini(history_summary: str, timeout: int) -> dict:
+    prompt = (SYSTEM + "\n\n---\n\n" + _user_prompt(history_summary)
+              + "\n\nОтветь ТОЛЬКО JSON-объектом по этой схеме, без пояснений:\n"
+              + json.dumps(SCHEMA, ensure_ascii=False))
+    cmd = [_find("gemini"), "--output-format", "json", "--approval-mode", "plan",
+           "--allowed-tools=google_web_search,web_fetch",
+           "-p", "Follow the instructions above."]
+    model = os.environ.get("HISTORIAN_GEMINI_MODEL")
+    if model:
+        cmd += ["-m", model]
+    result = json.loads(_run(cmd, prompt, timeout))
+    if result.get("error"):
+        raise RuntimeError(f"gemini: {result['error']}")
+    return _parse_json_reply(result.get("response", ""))
+
+
+RUNNERS = {"claude-code": _claude_code, "codex": _codex, "gemini": _gemini}
+
+
+def generate_story(engine: str, history_summary: str, timeout: int = 1800) -> dict:
+    story = _validate(RUNNERS[engine](history_summary, timeout))
+    story["engine"] = engine
+    return story

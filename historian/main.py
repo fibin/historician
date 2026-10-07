@@ -24,7 +24,7 @@ def fit_story(story: dict) -> dict:
 
 
 def generate(engine: str, entries: list[dict]) -> dict:
-    """engine: claude-code — подписка через Claude Code, api — Claude API по ключу."""
+    """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу."""
     client = None
     if engine == "api":
         import anthropic
@@ -32,13 +32,14 @@ def generate(engine: str, entries: list[dict]) -> dict:
     used = history.used_people(entries)
     summary = history.summary_for_prompt(entries)
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        if engine == "claude-code":
-            from . import claude_code
-            story = claude_code.generate_story(summary)
+        if engine != "api":
+            from . import engines
+            story = engines.generate_story(engine, summary)
         else:
             dossier, urls = research.find_story(client, summary)
             story = writer.write_posts(client, dossier, urls)
             story["dossier"] = dossier
+            story["engine"] = "api"
         if story["person"].strip().lower() in used:
             print(f"[{attempt}] {story['person']} уже был недавно, ищу другую историю", file=sys.stderr)
             continue
@@ -89,9 +90,9 @@ def main(argv=None) -> None:
     ap.add_argument("--from-draft")
     ap.add_argument("--out-dir", default="out")
     ap.add_argument("--refresh-threads-token", action="store_true")
-    ap.add_argument("--engine", choices=["claude-code", "api"],
+    ap.add_argument("--engine", choices=["claude-code", "codex", "gemini", "api"],
                     default=os.environ.get("HISTORIAN_ENGINE", "claude-code"),
-                    help="claude-code — на подписке через Claude Code (по умолчанию), api — через ключ API")
+                    help="claude-code (по умолчанию), codex (ChatGPT), gemini — через подписку; api — через ключ Claude API")
     args = ap.parse_args(argv)
 
     if args.refresh_threads_token:
