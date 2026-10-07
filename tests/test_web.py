@@ -3,6 +3,7 @@ import os
 import threading
 import urllib.error
 import urllib.request
+from datetime import date
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -84,6 +85,31 @@ def test_state_falls_back_to_first_account_and_picks_up_scheduler_posts():
     history.save(acc.history_path, history.add([], STORY, {"threads": "1"}))
     job = web.state(acc.id)["job"]
     assert job["story"]["subject"] == "Тихо Браге" and job["published"] is True
+
+
+def test_published_post_shows_link_from_journal_or_threads(me, monkeypatch):
+    acc = accounts.ensure()[0]
+    web.save_token(acc.id, "", "tok")
+    acc = accounts.get(acc.id)
+    # опубликован в окне: ссылка сразу из журнала
+    monkeypatch.setattr(threads_pub, "post_thread", lambda creds, parts: ["77"])
+    main.save_draft(STORY, acc.out_dir)
+    job = web.job_for(acc)
+    web.do_publish(acc.id, job, ["Пост"])
+    assert (job["published"], job["link"], job["link_kind"]) == (True, "https://www.threads.net/@x/post/77", "post")
+    assert job["published_on"] == date.today().isoformat()
+    # старая запись без ссылки: окно спрашивает ссылку у Threads, а если не вышло, ведёт на профиль
+    monkeypatch.setattr(web, "_in_background", lambda fn, *args: fn(*args))
+    old_entry = [{"date": "2026-10-07", "person": "Тихо Браге", "topic": "лось", "sources": [], "posted": {"threads": "5"}}]
+    history.save(acc.history_path, old_entry)
+    web.jobs.clear()
+    job = web.job_for(acc)
+    assert job["published"] and job["published_on"] == "2026-10-07"
+    assert job["link"] == "https://www.threads.net/@x/post/5"
+    monkeypatch.setattr(threads_pub, "permalink", lambda creds, post_id: None)
+    web.jobs.clear()
+    job = web.job_for(acc)
+    assert (job["link"], job["link_kind"]) == ("https://www.threads.net/@hist", "profile")
 
 
 @pytest.fixture

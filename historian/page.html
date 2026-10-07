@@ -30,7 +30,9 @@ button:disabled{opacity:.45;cursor:default}
 .newacc{display:none;gap:8px;margin:-6px 0 16px}.newacc.open{display:flex}.newacc input{flex:1}
 .post{margin-bottom:12px}.meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px}
 .meta .over{color:var(--bad);font-weight:600}.x{border:none;background:none;color:var(--muted);padding:0;font-weight:400;font-size:12px}
-.subject{font:600 19px/1.3 Georgia,serif;margin:0}.topic{color:var(--muted);margin:2px 0 14px}
+.subject{font:600 19px/1.3 Georgia,serif;margin:0}
+.badge{display:inline-block;font-size:13px;font-weight:600;color:var(--good);border:1px solid currentColor;border-radius:999px;padding:1px 10px;margin:0 0 10px}
+.done .topic{margin-bottom:10px}.done a.open{font-weight:600}.topic{color:var(--muted);margin:2px 0 14px}
 a{color:inherit}
 .sources a{display:block;color:var(--muted);font-size:13px;word-break:break-all}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:currentColor;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
@@ -212,8 +214,14 @@ $('auto').onchange = e => saveField('auto_publish', e.target.checked);
 $('time').onchange = e => { if(e.target.value) saveField('post_time', e.target.value); };
 
 function renderDraft(){
-  const d = $('draft'); const s = st.job.story;
+  const d = $('draft'), j = st.job, s = j.story;
   if(!s){ d.innerHTML = '<p class="status">Черновиков пока нет. Нажмите «Сгенерировать», это займёт несколько минут.</p>'; return; }
+  if(j.published){  // опубликованный пост: только заголовок и ссылка, без списка частей
+    d.innerHTML = `<div class="done"><span class="badge">✓ Опубликовано${j.published_on ? ' ' + ddmmyyyy(j.published_on) : ''}</span>
+      <p class="subject">${esc(s.subject || s.person || '')}</p><p class="topic">${esc(s.topic)}</p>
+      ${j.link ? `<a class="open" href="${esc(j.link)}" target="_blank" rel="noopener">${j.link_kind === 'profile' ? 'Открыть профиль в Threads' : 'Открыть пост в Threads'} →</a>` : ''}</div>`;
+    return;
+  }
   const eng = st.engines.find(e => e.id === s.engine);
   d.innerHTML = `<p class="subject">${esc(s.subject || s.person || '')}</p><p class="topic">${esc(s.topic)}${eng ? ' · ' + esc(eng.label) : ''}</p>
     <div id="posts"></div>
@@ -238,15 +246,13 @@ function renderStatus(){
   const j = st.job, busy = j.status === 'generating' || j.status === 'publishing';
   const noTheme = !st.account.theme.trim();
   $('gen').disabled = busy || noTheme;
-  if($('pub')) $('pub').disabled = busy || j.published || !st.account.has_token;
+  if($('pub')) $('pub').disabled = busy || !st.account.has_token;
   const g = $('genMsg'), p = $('pubMsg');
   say(g, ''); if(p) say(p, '');
   if(j.status === 'generating') g.innerHTML = `<span class="spin"></span>Ищу материал и пишу посты… ${mmss(j.elapsed)}`;
   else if(noTheme && !busy) say(g, 'Сначала опишите в настройках ниже, о чём аккаунт.');
   else if(j.status === 'publishing' && p) p.innerHTML = `<span class="spin"></span>Публикую…`;
   else if(j.status === 'error') say((p && j.story) ? p : g, j.message, 'err');
-  else if(j.published && p){ p.className = 'status ok';
-    p.innerHTML = j.link ? `Опубликовано: <a href="${esc(j.link)}" target="_blank" rel="noopener">открыть в Threads</a>` : 'Уже опубликовано'; }
   else if(p && !st.account.has_token) say(p, 'Чтобы публиковать, сохраните токен Threads ниже.');
 }
 
@@ -283,7 +289,8 @@ async function refresh(){
   renderTabs(); renderSchedule();
   if(shownAcc !== st.account.id){ shownAcc = st.account.id; renderAccount(); renderDraft(); renderStatus(); return; }
   syncToken(prev.account);
-  const changed = !prev || JSON.stringify(prev.job.story) !== JSON.stringify(st.job.story);
+  const view = j => JSON.stringify([j.story, j.published, j.published_on, j.link]);
+  const changed = !prev || view(prev.job) !== view(st.job);
   if(changed && !editing) renderDraft();
   renderStatus();
 }
