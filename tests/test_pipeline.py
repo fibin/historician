@@ -6,7 +6,7 @@ from historian import accounts, history, main, research, writer
 from historian.publishers import threads as threads_pub
 
 STORY = {
-    "person": "Тихо Браге",
+    "subject": "Тихо Браге",
     "topic": "лось, который напился пива",
     "threads_posts": ["Крючок.", "Середина. " * 80, "Источник: https://example.com/a"],
     "sources": ["https://example.com/a", "https://example.com/b"],
@@ -21,11 +21,11 @@ def fake_llm(monkeypatch):
         calls.append((summary, theme))
         return "ДОСЬЕ", [{"url": "https://example.com/a", "title": "A"}]
 
-    def write_posts(client, dossier, urls, language):
-        calls.append(language)
+    def write_posts(client, dossier, urls, theme, language):
+        calls.append((theme, language))
         return next(stories)
 
-    stories = iter([dict(STORY, person="Пётр I"), dict(STORY)])
+    stories = iter([dict(STORY, subject="Пётр I"), dict(STORY)])
     monkeypatch.setattr("anthropic.Anthropic", lambda: None)
     monkeypatch.setattr(research, "find_story", find_story)
     monkeypatch.setattr(writer, "write_posts", write_posts)
@@ -33,13 +33,18 @@ def fake_llm(monkeypatch):
 
 
 def test_generate_skips_recent_people_and_fits_lengths(fake_llm):
-    entries = [{"person": "Пётр I", "topic": "x", "sources": []}]
+    entries = [{"person": "Пётр I", "topic": "x", "sources": []}]  # запись старого формата
     story = main.generate("api", entries, theme="наука", language="English")
-    assert story["person"] == "Тихо Браге"
+    assert story["subject"] == "Тихо Браге"
     assert len(fake_llm) == 4 and "Пётр I" in fake_llm[0][0]
-    assert fake_llm[0][1] == "наука" and fake_llm[1] == "English"
+    assert fake_llm[0][1] == "наука" and fake_llm[1] == ("наука", "English")
     assert all(len(p) <= 500 for p in story["threads_posts"])
     assert len(story["threads_posts"]) > 3  # длинная середина разрезана
+
+
+def test_generate_needs_a_theme():
+    with pytest.raises(SystemExit, match="о чём"):
+        main.generate("claude-code", [], theme="  ")
 
 
 def test_draft_mode_does_not_publish(fake_llm, tmp_path, monkeypatch):
@@ -52,14 +57,15 @@ def test_draft_mode_does_not_publish(fake_llm, tmp_path, monkeypatch):
 
 def test_publish_from_draft_records_history(tmp_path, monkeypatch):
     draft = tmp_path / "d.json"
-    draft.write_text(json.dumps(STORY, ensure_ascii=False), encoding="utf-8")
+    old_format = {("person" if k == "subject" else k): v for k, v in STORY.items()}  # черновик прошлой версии
+    draft.write_text(json.dumps(old_format, ensure_ascii=False), encoding="utf-8")
     for k in ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"):
         monkeypatch.setenv(k, "v")  # из старого .env создаётся первый аккаунт
     sent = {}
     monkeypatch.setattr(threads_pub, "post_thread", lambda c, p: sent.setdefault("t", p) and ["222"])
     main.main(["--from-draft", str(draft), "--publish"])
     saved = history.load(str(tmp_path / "accounts" / "main" / "history.json"))
-    assert saved[0]["person"] == "Тихо Браге"
+    assert saved[0]["subject"] == "Тихо Браге"
     assert saved[0]["posted"] == {"threads": "222"}
 
 

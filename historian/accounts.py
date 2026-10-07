@@ -1,4 +1,5 @@
 """Аккаунты Threads. У каждого своя тема, язык, ИИ, время публикации, журнал и черновики.
+Тема («О чём аккаунт») решает, какой материал ищет ИИ и как пишет посты.
 
 Всё лежит в папке accounts/ (в git не попадает, там токены):
     accounts/<id>/account.json   настройки и токен
@@ -19,8 +20,18 @@ from . import history
 from .config import HISTORY_PATH, LANGUAGE, ThreadsCredentials, env_flag
 
 ROOT = os.environ.get("HISTORIAN_ACCOUNTS", "accounts")
-DEFAULT_THEME = ("малоизвестные истории о реальных людях любых эпох и стран: привычки, причуды, "
-                 "эпизоды из мемуаров, дневников и писем современников")
+# Тема, с которой начинался бот: её получает аккаунт, перенесённый из старых настроек.
+HISTORY_THEME = (
+    "Малоизвестные истории о реальных людях любых эпох и стран: привычки, причуды, бытовые детали, "
+    "странные эпизоды из мемуаров, дневников и писем современников, слуг, секретарей, врачей, родственников.\n"
+    "Не общеизвестные факты и не популярные сюжеты вроде «Гитлер хотел стать художником» или "
+    "«Наполеон был низкого роста», а то, что надо специально искать. Не зацикливаться на диктаторах и монархах: "
+    "учёные, художники, путешественники, врачи, инженеры, авантюристы тоже подходят. "
+    "Если что-то известно со слов одного мемуариста, так и сказать."
+)
+# Так выглядела тема по умолчанию в прошлой версии; такие аккаунты получают подробную HISTORY_THEME.
+_OLD_DEFAULT_THEME = ("малоизвестные истории о реальных людях любых эпох и стран: привычки, причуды, "
+                      "эпизоды из мемуаров, дневников и писем современников")
 TOKEN_REFRESH_DAYS = 7   # продлеваем токен раз в неделю, он живёт 60 дней
 TOKEN_LIFETIME_DAYS = 60
 
@@ -29,7 +40,7 @@ TOKEN_LIFETIME_DAYS = 60
 class Account:
     id: str
     name: str
-    theme: str = DEFAULT_THEME
+    theme: str = ""
     language: str = LANGUAGE
     engine: str = "claude-code"
     post_time: str = "10:00"
@@ -85,7 +96,10 @@ def _load(path: str) -> Account:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     names = {f.name for f in fields(Account)}
-    return Account(**{k: v for k, v in data.items() if k in names})
+    acc = Account(**{k: v for k, v in data.items() if k in names})
+    if acc.theme == _OLD_DEFAULT_THEME:
+        acc.theme = HISTORY_THEME
+    return acc
 
 
 def list_all() -> list[Account]:
@@ -140,7 +154,7 @@ def migrate_legacy() -> Account:
     env = os.environ
     engine = env.get("HISTORIAN_ENGINE", "claude-code")
     acc = Account(
-        id="main", name="Основной", created=_now(),
+        id="main", name="Основной", created=_now(), theme=HISTORY_THEME,
         engine=engine if engine in ENGINES else "claude-code",
         auto_publish=env_flag("HISTORIAN_PUBLISH"),
         threads_user_id=env.get("THREADS_USER_ID", ""),

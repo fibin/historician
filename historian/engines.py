@@ -1,4 +1,4 @@
-"""Движки, которые ищут историю и пишут посты.
+"""Движки, которые ищут материал и пишут посты.
 
 claude-code, codex и gemini работают через консольные программы, вошедшие в вашу подписку
 (Claude, ChatGPT, аккаунт Google), поэтому ключ API не нужен. api — Claude API по ключу.
@@ -24,7 +24,7 @@ def system_prompt(theme: str, language: str) -> str:
     return (
         research.system_prompt(theme)
         + "\n\n---\nКогда досье готово, сам напиши по нему посты.\n\n"
-        + writer.system_prompt(language)
+        + writer.system_prompt(theme, language)
         + "\n\nВ поле dossier положи досье целиком (в формате выше)."
     )
 
@@ -71,11 +71,7 @@ def _find(binary: str, required: bool = True) -> str | None:
 
 
 def _user_prompt(history_summary: str) -> str:
-    return (
-        "Найди сегодняшнюю историю и напиши посты.\n\n"
-        "Эти люди и сюжеты уже были в этом аккаунте, их не повторяй (людей из последних двух месяцев не бери вовсе):\n"
-        f"{history_summary}"
-    )
+    return research.user_prompt(history_summary) + "\n\nКогда досье готово, напиши посты."
 
 
 def _run(cmd: list[str], stdin: str, timeout: int) -> str:
@@ -120,7 +116,7 @@ def _claude_code(system: str, history_summary: str, timeout: int) -> dict:
     ]
     result = json.loads(_run(cmd, _user_prompt(history_summary), timeout))
     if result.get("is_error") or not result.get("structured_output"):
-        raise RuntimeError(f"claude не вернул историю: {result.get('result') or result}")
+        raise RuntimeError(f"claude не вернул посты: {result.get('result') or result}")
     return result["structured_output"]
 
 

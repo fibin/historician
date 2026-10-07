@@ -18,23 +18,32 @@ from . import accounts, history, research, writer
 from .config import LANGUAGE, THREADS_LIMIT, ThreadsCredentials, env_flag
 from .textfit import fit, plain_length
 
-MAX_ATTEMPTS = 3        # сколько раз искать другую историю, если человек уже был
+MAX_ATTEMPTS = 3        # сколько раз искать другой материал, если такой предмет уже был
 MAX_DAILY_ATTEMPTS = 2  # сколько раз в день планировщик пробует опубликовать, если что-то сломалось
 
 
+def normalize(story: dict) -> dict:
+    """Черновики старых версий хранили предмет публикации в поле person."""
+    if "subject" not in story and "person" in story:
+        story["subject"] = story.pop("person")
+    return story
+
+
 def fit_story(story: dict) -> dict:
+    story = normalize(story)
     story["threads_posts"] = fit(story["threads_posts"], THREADS_LIMIT, plain_length)
     return story
 
 
-def generate(engine: str, entries: list[dict], theme: str = accounts.DEFAULT_THEME,
-             language: str = LANGUAGE) -> dict:
+def generate(engine: str, entries: list[dict], theme: str, language: str = LANGUAGE) -> dict:
     """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу."""
+    if not theme.strip():
+        raise SystemExit("Опишите в настройках аккаунта, о чём он: без темы ИИ не знает, что искать")
     client = None
     if engine == "api":
         import anthropic
         client = anthropic.Anthropic()
-    used = history.used_people(entries)
+    used = history.used_subjects(entries)
     summary = history.summary_for_prompt(entries)
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if engine != "api":
@@ -42,14 +51,14 @@ def generate(engine: str, entries: list[dict], theme: str = accounts.DEFAULT_THE
             story = engines.generate_story(engine, summary, theme, language)
         else:
             dossier, urls = research.find_story(client, summary, theme)
-            story = writer.write_posts(client, dossier, urls, language)
+            story = writer.write_posts(client, dossier, urls, theme, language)
             story["dossier"] = dossier
             story["engine"] = "api"
-        if story["person"].strip().lower() in used:
-            print(f"[{attempt}] {story['person']} уже был недавно, ищу другую историю", file=sys.stderr)
+        if history.key(story) in used:
+            print(f"[{attempt}] «{history.subject_of(story)}» уже был недавно, ищу другой материал", file=sys.stderr)
             continue
         return fit_story(story)
-    raise RuntimeError("Не удалось найти новую историю")
+    raise RuntimeError("Не удалось найти новый материал: ИИ трижды предложил то, что уже было")
 
 
 def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
@@ -66,8 +75,8 @@ def publish(story: dict, creds: ThreadsCredentials | None) -> dict:
 
 
 def check_not_recent(story: dict, entries: list[dict]) -> None:
-    if story["person"].strip().lower() in history.used_people(entries):
-        raise SystemExit(f"{story['person']} уже был недавно, нужна другая история")
+    if history.key(story) in history.used_subjects(entries):
+        raise SystemExit(f"«{history.subject_of(story)}» уже был в этом аккаунте недавно, нужен другой материал")
 
 
 def save_draft(story: dict, out_dir: str, path: str | None = None) -> str:
@@ -87,7 +96,7 @@ def publish_and_record(acc: accounts.Account, story: dict) -> dict:
 
 
 def print_preview(story: dict) -> None:
-    print(f"\n=== {story['person']} — {story['topic']} ===\n")
+    print(f"\n=== {history.subject_of(story)} — {story['topic']} ===\n")
     for i, p in enumerate(story["threads_posts"], 1):
         print(f"[{i}/{len(story['threads_posts'])}, {len(p)} симв.] {p}\n")
     print("Источники:", *story["sources"], sep="\n  ")
@@ -96,7 +105,7 @@ def print_preview(story: dict) -> None:
 def is_due(acc: accounts.Account, now: datetime) -> bool:
     """Пора ли публиковать: включена автопубликация, время прошло, сегодня в аккаунте ещё не было поста.
     Если компьютер был выключен в нужный час, пост выйдет при первом запуске после включения."""
-    return (acc.auto_publish and acc.creds() is not None
+    return (acc.auto_publish and acc.creds() is not None and bool(acc.theme.strip())
             and now.strftime("%H:%M") >= acc.post_time
             and not accounts.posted_today(acc, now.date())
             and accounts.attempts_today(acc, now.date()) < MAX_DAILY_ATTEMPTS)
@@ -110,13 +119,13 @@ def run_due(now: datetime | None = None) -> None:
         if not is_due(acc, now):
             continue
         accounts.note_attempt(acc, now.date())
-        print(f"{now:%Y-%m-%d %H:%M} [{acc.name}] ищу историю ({acc.engine})", flush=True)
+        print(f"{now:%Y-%m-%d %H:%M} [{acc.name}] готовлю пост ({acc.engine})", flush=True)
         try:
             story = generate_for(acc)
             draft = save_draft(story, acc.out_dir)
             print(f"[{acc.name}] черновик: {draft}", flush=True)
             posted = publish_and_record(acc, story)
-            print(f"[{acc.name}] опубликовано: {story['person']} — {story['topic']} {posted}", flush=True)
+            print(f"[{acc.name}] опубликовано: {history.subject_of(story)} — {story['topic']} {posted}", flush=True)
         except (Exception, SystemExit) as e:  # один сломанный аккаунт не мешает остальным
             print(f"[{acc.name}] ошибка: {e}", flush=True)
             traceback.print_exc()

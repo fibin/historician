@@ -15,7 +15,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import accounts, engines, main
+from . import accounts, engines, history, main
 from .config import LANGUAGE, THREADS_LIMIT
 from .publishers import threads as threads_pub
 
@@ -30,7 +30,7 @@ schedule = {"supported": os.name == "nt", "status": "unknown"}
 
 
 def _is_published(acc: accounts.Account, story: dict) -> bool:
-    return any(e["person"] == story.get("person") and e["topic"] == story.get("topic")
+    return any(history.key(e) == history.key(story) and e["topic"] == story.get("topic")
                for e in acc.history())
 
 
@@ -49,7 +49,7 @@ def job_for(acc: accounts.Account) -> dict:
         latest = _latest_draft(acc)
         if latest and latest != job["draft"]:
             with open(latest, encoding="utf-8") as f:
-                job.update(story=json.load(f), draft=latest, link=None)
+                job.update(story=main.normalize(json.load(f)), draft=latest, link=None)
         if job["story"]:
             job["published"] = _is_published(acc, job["story"])
         return job
@@ -65,12 +65,12 @@ def state(account_id: str | None) -> dict:
     acc = next((a for a in all_accounts if a.id == account_id), all_accounts[0])
     job = job_for(acc)
     summary = [{"id": a.id, "name": a.name, "username": a.threads_username, "has_token": bool(a.threads_token),
+                "has_theme": bool(a.theme.strip()),
                 "auto_publish": a.auto_publish, "post_time": a.post_time,
                 "busy": jobs.get(a.id, {}).get("status") in BUSY} for a in all_accounts]
     elapsed = int(time.time() - job["started"]) if job["status"] in BUSY else 0
     return {"accounts": summary, "account": acc.public(), "job": {**job, "elapsed": elapsed},
-            "engines": engines_info(), "schedule": schedule, "limit": THREADS_LIMIT,
-            "default_theme": accounts.DEFAULT_THEME}
+            "engines": engines_info(), "schedule": schedule, "limit": THREADS_LIMIT}
 
 
 def create_account(name: str) -> dict:
@@ -87,7 +87,7 @@ def update_account(account_id: str, data: dict) -> dict:
             raise ValueError("Название не может быть пустым")
         acc.name = data["name"].strip()
     if "theme" in data:
-        acc.theme = data["theme"].strip() or accounts.DEFAULT_THEME
+        acc.theme = data["theme"].strip()
     if "language" in data:
         acc.language = data["language"].strip() or LANGUAGE
     if "engine" in data:
@@ -102,6 +102,8 @@ def update_account(account_id: str, data: dict) -> dict:
     if "auto_publish" in data:
         if data["auto_publish"] and not acc.creds():
             raise ValueError("Сначала сохраните токен Threads для этого аккаунта")
+        if data["auto_publish"] and not acc.theme.strip():
+            raise ValueError("Сначала опишите, о чём аккаунт")
         acc.auto_publish = bool(data["auto_publish"])
     acc.save()
     return acc.public()

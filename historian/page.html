@@ -13,7 +13,7 @@ h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute
 h2 .saved{text-transform:none;letter-spacing:0;font-weight:500}
 label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
 input,textarea,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
-textarea{min-height:110px;resize:vertical}textarea.theme{min-height:70px}
+textarea{min-height:110px;resize:vertical}textarea.theme{min-height:96px}
 input[type=checkbox]{width:auto;margin:0 8px 0 0;vertical-align:-2px}input[type=time]{width:auto}
 button{font:600 15px system-ui,sans-serif;border-radius:8px;border:1px solid var(--accent);padding:10px 18px;cursor:pointer;background:var(--accent);color:var(--bg)}
 button.ghost{background:transparent;color:var(--ink);border-color:var(--line);font-weight:500}
@@ -30,7 +30,7 @@ button:disabled{opacity:.45;cursor:default}
 .newacc{display:none;gap:8px;margin:-6px 0 16px}.newacc.open{display:flex}.newacc input{flex:1}
 .post{margin-bottom:12px}.meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px}
 .meta .over{color:var(--bad);font-weight:600}.x{border:none;background:none;color:var(--muted);padding:0;font-weight:400;font-size:12px}
-.person{font:600 19px/1.3 Georgia,serif;margin:0}.topic{color:var(--muted);margin:2px 0 14px}
+.subject{font:600 19px/1.3 Georgia,serif;margin:0}.topic{color:var(--muted);margin:2px 0 14px}
 a{color:inherit}
 .sources a{display:block;color:var(--muted);font-size:13px;word-break:break-all}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:currentColor;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
@@ -44,12 +44,14 @@ code{font:13px ui-monospace,Consolas,monospace;background:var(--bg);border:1px s
 .plan .t{color:var(--muted)}
 hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 </style></head><body><main>
-<h1>Historian</h1><p class="sub">Малоизвестные истории для Threads</p>
+<h1>Historian</h1><p class="sub">Генерация и публикация постов в Threads</p>
 
 <details class="card guide" id="guide"><summary>Как начать</summary>
 <ol>
 <li><b>Аккаунты</b> переключаются вкладками вверху. У каждого своя тема, язык, ИИ, токен Threads, время публикации и свой журнал,
-поэтому истории не повторяются внутри аккаунта. Новый аккаунт: кнопка «+ Добавить аккаунт».</li>
+поэтому материалы не повторяются внутри аккаунта. Новый аккаунт: кнопка «+ Добавить аккаунт».</li>
+<li><b>Опишите тему</b> в поле «О чём аккаунт»: о чём искать материал и какими должны быть посты (тон, формат, что важно).
+Чем подробнее, тем точнее попадание. ИИ пишет только на эту тему.</li>
 <li><b>Выберите ИИ</b> в «Настройках аккаунта». Если рядом написано «не установлен», выполните шаги под списком, а потом закройте и снова откройте Historian.bat.</li>
 <li><b>Получите токен Threads</b> (для каждого аккаунта Threads свой):
 <ul>
@@ -61,7 +63,6 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 Если Threads попросит войти, входите именно в тот аккаунт, для которого нужен токен.</li>
 </ul></li>
 <li><b>Вставьте токен</b> в блок «Аккаунт Threads» и нажмите «Сохранить токен». ID определится сам, а продлевать токен бот будет сам.</li>
-<li><b>Опишите тему</b> в поле «О чём аккаунт»: ИИ будет искать истории только про это.</li>
 <li>Нажмите <b>«Сгенерировать»</b>, прочитайте посты, при необходимости поправьте, затем <b>«Опубликовать»</b>.</li>
 <li><b>Каждый день сам</b> (по желанию): поставьте галочку «Публиковать каждый день сам», выберите время,
 а в блоке «Расписание» внизу нажмите «Включить расписание» (один раз на все аккаунты).</li>
@@ -71,7 +72,7 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 <nav class="tabs" id="tabs"></nav>
 <div class="newacc" id="newAcc"><input id="newName" placeholder="Название, например «Наука»" autocomplete="off"><button id="createAcc">Создать</button><button class="ghost" id="cancelAcc">Отмена</button></div>
 
-<section class="card"><h2>История дня</h2>
+<section class="card"><h2>Пост дня</h2>
 <div class="row" style="margin-top:0"><button id="gen">Сгенерировать</button><span id="genMsg" class="status"></span></div>
 <div id="draft" style="margin-top:16px"></div>
 </section>
@@ -80,8 +81,8 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 <label for="name">Название (видно только вам)</label>
 <input id="name" autocomplete="off">
 <label for="theme">О чём аккаунт</label>
-<textarea id="theme" class="theme" placeholder="Например: истории украинских учёных и изобретателей XIX–XX веков"></textarea>
-<p class="hint">ИИ ищет истории только на эту тему. Поля сохраняются сами, когда вы переходите к другому.</p>
+<textarea id="theme" class="theme" placeholder="Например: неочевидные факты о космосе простым языком, с цифрами и сравнениями. Или: короткие практичные советы по продуктивности, один приём на пост, с примером из жизни."></textarea>
+<p class="hint">О чём искать материал и какими должны быть посты: тон, формат, что важно. ИИ пишет только на эту тему. Поля сохраняются сами, когда вы переходите к другому.</p>
 <div class="two">
 <div><label for="lang">Язык постов</label>
 <input id="lang" list="langs" autocomplete="off">
@@ -113,7 +114,7 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 </main>
 <script>
 const $ = id => document.getElementById(id);
-let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '';
+let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '', focusTheme = false;
 try { cur = localStorage.getItem('historian.account'); } catch(e) {}
 
 async function api(path, body){
@@ -152,8 +153,9 @@ function engineNote(){
 }
 function autoHint(){
   const a = st.account;
-  $('autoHint').textContent = !a.has_token ? 'Сначала сохраните токен Threads ниже.'
-    : a.auto_publish ? `Бот сам найдёт и опубликует историю в ${a.post_time}, не больше одной в день. Если компьютер был выключен, пост выйдет после включения.`
+  $('autoHint').textContent = !a.theme.trim() ? 'Сначала опишите выше, о чём аккаунт.'
+    : !a.has_token ? 'Сначала сохраните токен Threads ниже.'
+    : a.auto_publish ? `Бот сам подготовит и опубликует пост в ${a.post_time}, не больше одного в день. Если компьютер был выключен, пост выйдет после включения.`
     : 'Сейчас только вручную, кнопкой «Опубликовать».';
 }
 function renderAccount(){
@@ -165,6 +167,7 @@ function renderAccount(){
   $('uid').value = a.threads_user_id; $('tok').value = ''; say($('saveMsg'), '');
   renderToken();
   if(!a.has_token) $('guide').open = true;
+  if(focusTheme){ focusTheme = false; $('theme').scrollIntoView({block: 'center'}); $('theme').focus(); }
 }
 function renderToken(){
   const a = st.account;
@@ -196,7 +199,7 @@ function renderDraft(){
   const d = $('draft'); const s = st.job.story;
   if(!s){ d.innerHTML = '<p class="status">Черновиков пока нет. Нажмите «Сгенерировать», это займёт несколько минут.</p>'; return; }
   const eng = st.engines.find(e => e.id === s.engine);
-  d.innerHTML = `<p class="person">${esc(s.person)}</p><p class="topic">${esc(s.topic)}${eng ? ' · ' + esc(eng.label) : ''}</p>
+  d.innerHTML = `<p class="subject">${esc(s.subject || s.person || '')}</p><p class="topic">${esc(s.topic)}${eng ? ' · ' + esc(eng.label) : ''}</p>
     <div id="posts"></div>
     <button class="ghost" id="add">+ Добавить пост</button>
     <div class="sources" style="margin-top:14px">${(s.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('')}</div>
@@ -217,11 +220,13 @@ function addPost(text){
 }
 function renderStatus(){
   const j = st.job, busy = j.status === 'generating' || j.status === 'publishing';
-  $('gen').disabled = busy;
+  const noTheme = !st.account.theme.trim();
+  $('gen').disabled = busy || noTheme;
   if($('pub')) $('pub').disabled = busy || j.published || !st.account.has_token;
   const g = $('genMsg'), p = $('pubMsg');
   say(g, ''); if(p) say(p, '');
-  if(j.status === 'generating') g.innerHTML = `<span class="spin"></span>Ищу историю… ${mmss(j.elapsed)}`;
+  if(j.status === 'generating') g.innerHTML = `<span class="spin"></span>Ищу материал и пишу посты… ${mmss(j.elapsed)}`;
+  else if(noTheme && !busy) say(g, 'Сначала опишите в настройках ниже, о чём аккаунт.');
   else if(j.status === 'publishing' && p) p.innerHTML = `<span class="spin"></span>Публикую…`;
   else if(j.status === 'error') say((p && j.story) ? p : g, j.message, 'err');
   else if(j.published && p){ p.className = 'status ok';
@@ -234,7 +239,7 @@ function renderSchedule(){
   const key = JSON.stringify([st.accounts, sc]);
   if(key === lastPlan) return; lastPlan = key;
   $('plan').innerHTML = st.accounts.map(a => `<li><b>${esc(a.name)}</b> <span class="t">${
-    !a.has_token ? 'нет токена Threads' : a.auto_publish ? 'каждый день в ' + a.post_time : 'только вручную'}</span></li>`).join('');
+    !a.has_theme ? 'нет темы' : !a.has_token ? 'нет токена Threads' : a.auto_publish ? 'каждый день в ' + a.post_time : 'только вручную'}</span></li>`).join('');
   const texts = {
     hourly: ['Включено: бот проверяет аккаунты каждый час, пока компьютер включён.', 'ok'],
     daily: ['Включено по старой схеме, раз в день в одно время. Нажмите «Обновить расписание», чтобы бот проверял все аккаунты каждый час.', 'err'],
@@ -288,7 +293,7 @@ $('del').onclick = async () => {
 };
 $('createAcc').onclick = async () => {
   try { const a = await api('/api/accounts', {name: $('newName').value});
-    $('newName').value = ''; $('newAcc').classList.remove('open'); pick(a.id); }
+    $('newName').value = ''; $('newAcc').classList.remove('open'); focusTheme = true; pick(a.id); }
   catch(e){ $('newName').placeholder = e.message; $('newName').focus(); }
 };
 $('newName').onkeydown = e => { if(e.key === 'Enter') $('createAcc').click(); if(e.key === 'Escape') $('cancelAcc').click(); };

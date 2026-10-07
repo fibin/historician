@@ -1,4 +1,4 @@
-"""Журнал опубликованных историй: не повторяем людей и сюжеты."""
+"""Журнал опубликованного в аккаунте: не повторяем предметы и темы."""
 import json
 import os
 from datetime import date
@@ -18,22 +18,31 @@ def save(path: str, entries: list[dict]) -> None:
         f.write("\n")
 
 
+def subject_of(item: dict) -> str:
+    """О ком или о чём публикация. Старые записи и черновики хранили это в поле person."""
+    return item.get("subject") or item.get("person") or ""
+
+
+def key(item: dict) -> str:
+    return subject_of(item).strip().lower()
+
+
 def summary_for_prompt(entries: list[dict], limit: int = 300) -> str:
     """Короткий список уже использованных тем для промпта."""
     if not entries:
         return "(пока ничего не публиковалось)"
     recent = entries[-limit:]
-    return "\n".join(f"- {e['person']}: {e['topic']}" for e in recent)
+    return "\n".join(f"- {subject_of(e)}: {e['topic']}" for e in recent)
 
 
-def used_people(entries: list[dict], recent: int = 60) -> set[str]:
-    return {e["person"].strip().lower() for e in entries[-recent:]}
+def used_subjects(entries: list[dict], recent: int = 60) -> set[str]:
+    return {key(e) for e in entries[-recent:]}
 
 
 def add(entries: list[dict], story: dict, posted: dict) -> list[dict]:
     return entries + [{
         "date": date.today().isoformat(),
-        "person": story["person"],
+        "subject": subject_of(story),
         "topic": story["topic"],
         "sources": story["sources"],
         "engine": story.get("engine"),
