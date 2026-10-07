@@ -16,7 +16,7 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import accounts, comments, engines, history, main, stats, video
+from . import accounts, comments, engines, history, main, stats, video, writer
 from .config import LANGUAGE, THREADS_LIMIT
 from .publishers import threads as threads_pub
 
@@ -183,6 +183,15 @@ def update_account(account_id: str, data: dict) -> dict:
         if not m or int(m[1]) > 23 or int(m[2]) > 59:
             raise ValueError("Время в формате ЧЧ:ММ, например 10:00")
         acc.post_time = f"{int(m[1]):02d}:{m[2]}"
+    if "posts_min" in data or "posts_max" in data:
+        try:
+            lo = int(data.get("posts_min", acc.posts_min))
+            hi = int(data.get("posts_max", acc.posts_max))
+        except (TypeError, ValueError):
+            raise ValueError("Число постов — целое число")
+        if not 1 <= lo <= hi <= writer.MAX_POSTS:
+            raise ValueError(f"Постов в цепочке: от 1 до {writer.MAX_POSTS}, и «от» не больше «до»")
+        acc.posts_min, acc.posts_max = lo, hi
     if "with_image" in data:
         acc.with_image = bool(data["with_image"])
     if "auto_publish" in data:

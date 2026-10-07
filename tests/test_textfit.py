@@ -18,3 +18,11 @@ def test_fit_splits_giant_sentence_by_words():
     parts = fit([text], 50, plain_length)
     assert all(len(p) <= 50 for p in parts)
     assert " ".join(parts) == text
+
+
+def test_merge_to_glues_short_neighbours_until_limit():
+    from historian.textfit import merge_to
+    assert merge_to(["a", "bb", "c"], 2, 100, len) == ["a\n\nbb", "c"]
+    assert merge_to(["a", "b", "c", "d"], 1, 100, len) == ["a\n\nb\n\nc\n\nd"]
+    assert merge_to(["x" * 60, "y" * 60], 1, 100, len) == ["x" * 60, "y" * 60]  # не помещается — оставляем
+    assert merge_to(["a", "b"], 5, 100, len) == ["a", "b"]

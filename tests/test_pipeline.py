@@ -21,7 +21,7 @@ def fake_llm(monkeypatch):
         calls.append((summary, theme))
         return "ДОСЬЕ", [{"url": "https://example.com/a", "title": "A"}]
 
-    def write_posts(client, dossier, urls, theme, language, feedback=""):
+    def write_posts(client, dossier, urls, theme, language, feedback="", posts=(1, 10)):
         calls.append((theme, language))
         return next(stories)
 

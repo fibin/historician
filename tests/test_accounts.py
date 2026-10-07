@@ -88,7 +88,7 @@ def scheduled(monkeypatch):
     manual.save()
     log = {"generated": [], "posted": []}
 
-    def generate(engine, entries, theme, language, with_image=True):
+    def generate(engine, entries, theme, language, with_image=True, posts=(1, 10)):
         log["generated"].append((engine, theme, language))
         if log.get("fail"):
             raise RuntimeError("лимит подписки")

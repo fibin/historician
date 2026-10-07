@@ -13,7 +13,7 @@ SYSTEM = """Ты автор аккаунта в Threads. Тема аккаунт
 Язык постов: {language}. Пиши только на этом языке, даже если досье на другом; имена, названия и цитаты передавай по нормам этого языка. Без хештегов, максимум один уместный эмодзи на весь текст или ни одного, если тема не просит иначе.
 
 Формат ответа:
-- threads_posts: цепочка из 1–10 постов: столько, сколько нужно материалу, без воды. Каждый пост не длиннее {max_len} символов.
+- threads_posts: {posts}. Каждый пост не длиннее {max_len} символов.
   Первый пост — крючок: от него зависит, раскроют ли цепочку. Придумай про себя три разных начала
   (неожиданный факт или цифра, парадокс, конфликт или загадка) и возьми самое сильное. Первая фраза понятна
   без контекста и цепляет с первой секунды; не начинай с даты, «Знаете ли вы» или «Сегодня расскажу».
@@ -41,19 +41,33 @@ SCHEMA = {
 }
 
 
-def system_prompt(theme: str, language: str) -> str:
+DEFAULT_POSTS = (1, 10)  # сколько постов в цепочке, если в аккаунте не задано иначе
+MAX_POSTS = 25
+
+
+def posts_rule(posts: tuple[int, int]) -> str:
+    lo, hi = posts
+    if lo == hi == 1:
+        return "один пост, без цепочки"
+    if lo == hi:
+        return f"цепочка ровно из {hi} постов"
+    return f"цепочка из {lo}–{hi} постов: столько, сколько нужно материалу, без воды"
+
+
+def system_prompt(theme: str, language: str, posts: tuple[int, int] = DEFAULT_POSTS) -> str:
     return (SYSTEM.replace("{theme}", theme.strip()).replace("{language}", language.strip())
-            .replace("{max_len}", str(THREADS_LIMIT - 20)))
+            .replace("{posts}", posts_rule(posts)).replace("{max_len}", str(THREADS_LIMIT - 20)))
 
 
-def write_posts(client, dossier: str, found_urls: list[dict], theme: str, language: str, feedback: str = "") -> dict:
+def write_posts(client, dossier: str, found_urls: list[dict], theme: str, language: str, feedback: str = "",
+                posts: tuple[int, int] = DEFAULT_POSTS) -> dict:
     urls = "\n".join(u["url"] for u in found_urls) or "(нет)"
     user = f"Досье:\n{dossier}\n\nURL, которые реально открывались при поиске:\n{urls}"
     if feedback:
         user += f"\n\n{feedback}"
     response = llm.run(
         client,
-        system=system_prompt(theme, language),
+        system=system_prompt(theme, language, posts),
         user=user,
         output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
         effort="medium",

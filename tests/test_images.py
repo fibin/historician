@@ -59,7 +59,7 @@ def test_find_dedups_and_survives_network_errors(monkeypatch):
 
 def test_generate_attaches_images_unless_disabled(monkeypatch):
     from historian import engines
-    monkeypatch.setattr(engines, "generate_story", lambda *a: {
+    monkeypatch.setattr(engines, "generate_story", lambda *a, **k: {
         "subject": "X", "topic": "t", "threads_posts": ["p"], "sources": [], "image_queries": ["q"]})
     monkeypatch.setattr(images, "search", lambda q, limit=10: [{"page": "p", "url": "https://u/1280px-a.jpg"}])
     story = main.generate("claude-code", [], "тема")
