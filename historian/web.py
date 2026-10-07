@@ -16,7 +16,7 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import accounts, engines, history, main, stats, video
+from . import accounts, comments, engines, history, main, stats, video
 from .config import LANGUAGE, THREADS_LIMIT
 from .publishers import threads as threads_pub
 
@@ -29,6 +29,7 @@ _lock = threading.Lock()
 jobs: dict[str, dict] = {}  # по id аккаунта: что сейчас происходит и какой черновик открыт
 schedule = {"supported": os.name == "nt", "status": "unknown"}
 stats_running: set[str] = set()  # аккаунты, для которых сейчас запрашиваем статистику
+comments_running: set[str] = set()  # аккаунты, где сейчас ищем комментарии и пишем черновики ответов
 
 
 def _published_entry(acc: accounts.Account, story: dict) -> dict | None:
@@ -101,6 +102,25 @@ def refresh_stats(acc: accounts.Account, force: bool = False) -> bool:
     return True
 
 
+def check_comments(acc: accounts.Account, force: bool = False) -> bool:
+    """Новые комментарии и черновики ответов в фоне, не чаще раза в час (или сразу, если force)."""
+    with _lock:
+        if acc.id in comments_running or not acc.creds() or not (force or comments.is_stale(acc)):
+            return False
+        comments_running.add(acc.id)
+
+    def worker():
+        try:
+            comments.check(acc)
+        except Exception:
+            traceback.print_exc()
+        finally:
+            comments_running.discard(acc.id)
+
+    _in_background(worker)
+    return True
+
+
 def video_path(acc: accounts.Account, draft: str | None) -> str | None:
     """Видео черновика лежит в accounts/<id>/video/ под тем же именем, что и черновик."""
     if not draft:
@@ -129,9 +149,11 @@ def state(account_id: str | None) -> dict:
                 "busy": jobs.get(a.id, {}).get("status") in BUSY} for a in all_accounts]
     elapsed = int(time.time() - job["started"]) if job["status"] in BUSY else 0
     refresh_stats(acc)
+    check_comments(acc)
     acc_stats = {**stats.summary(acc), "loading": acc.id in stats_running}
+    acc_comments = {**comments.pending(acc), "loading": acc.id in comments_running}
     return {"accounts": summary, "account": acc.public(),
-            "job": {**job, "elapsed": elapsed, "video": video_state(acc, job)}, "stats": acc_stats,
+            "job": {**job, "elapsed": elapsed, "video": video_state(acc, job)}, "stats": acc_stats, "comments": acc_comments,
             "engines": engines_info(), "schedule": schedule, "limit": THREADS_LIMIT}
 
 
@@ -403,6 +425,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not path or not os.path.exists(path):
                     raise ValueError("Видео ещё нет")
                 open_folder(path)
+                return self._send(200, {"ok": True})
+            if self.path == "/api/comments/check":
+                acc = accounts.get(acc_id)
+                if not acc.creds():
+                    raise ValueError("Сначала сохраните токен Threads для этого аккаунта")
+                return self._send(200, {"ok": check_comments(acc, force=True)})
+            if self.path == "/api/comments/send":
+                return self._send(200, comments.send(accounts.get(acc_id), body.get("comment", ""), body.get("text", "")))
+            if self.path == "/api/comments/skip":
+                comments.skip(accounts.get(acc_id), body.get("comment", ""))
                 return self._send(200, {"ok": True})
             if self.path == "/api/stats":
                 acc = accounts.get(acc_id)

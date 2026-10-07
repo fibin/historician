@@ -15,5 +15,10 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(threads_pub, "followers", lambda creds: 0)
     monkeypatch.setattr(threads_pub, "post_insights", lambda creds, post_id: {})
     monkeypatch.setattr(images, "search", lambda query, limit=10: [])
+    monkeypatch.setattr(threads_pub, "conversation", lambda creds, post_id, pages=5: [])
+    # фоновые обновления статистики и комментариев в тестах не запускаем: они переживают тест и его папку
+    monkeypatch.setattr(web, "_in_background", lambda fn, *args: None)
     web.jobs.clear()
+    web.stats_running.clear()
+    web.comments_running.clear()
     return tmp_path

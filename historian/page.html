@@ -61,6 +61,10 @@ table.stats tr.top td:first-child a{font-weight:600}
 .vid{display:flex;gap:14px;align-items:flex-start}.vid video{width:170px;aspect-ratio:9/16;border-radius:8px;background:#000;flex:none}
 .vid .cap{flex:1;min-width:0;font-size:13px;color:var(--muted)}.vid .cap b{display:block;color:var(--ink);font-size:15px;font-weight:600;margin-bottom:2px}
 .vid textarea{min-height:120px;font-size:13px;margin-top:8px}.vid button{font-size:13px;padding:6px 11px}
+.com{border-top:1px solid var(--line);padding:12px 0 4px}.com:first-child{border-top:none;padding-top:0}
+.com .who{font-size:13px;color:var(--muted)}.com .who b{color:var(--ink);font-weight:600}
+.com .txt{margin:4px 0 8px;white-space:pre-wrap;overflow-wrap:anywhere}.com textarea{min-height:64px}
+.com .row{margin-top:8px}.com button{font-size:13px;padding:7px 13px}
 @media (max-width:560px){.vid{flex-direction:column}.vid video{width:100%;max-width:260px}}
 </style></head><body><main>
 <h1>Historian</h1><p class="sub">Генерация и публикация постов в Threads</p>
@@ -109,6 +113,13 @@ table.stats tr.top td:first-child a{font-weight:600}
 Это включается, когда наберётся 4 поста старше двух дней. Цифры обновляются сами раз в 6 часов.</p>
 </section>
 
+<section class="card"><h2><span>Комментарии</span><span id="comMsg" class="saved status"></span></h2>
+<div id="coms"></div>
+<div class="row"><button class="ghost" id="comBtn">Проверить комментарии</button></div>
+<p class="hint">Бот находит новые комментарии под постами последних двух недель, ИИ предлагает ответ, а отправляете вы.
+Живые ответы автора растят аудиторию, а автоматические выглядят как бот.</p>
+</section>
+
 <section class="card"><h2><span>Настройки аккаунта</span><span id="setMsg" class="saved status"></span></h2>
 <label for="name">Название (видно только вам)</label>
 <input id="name" autocomplete="off">
@@ -149,7 +160,8 @@ table.stats tr.top td:first-child a{font-weight:600}
 <script>
 const $ = id => document.getElementById(id);
 let pic = null;  // номер выбранной картинки в черновике или null
-let lastVid = '';
+let lastVid = '', lastComs = '';
+const comEdits = {};  // правки в черновиках ответов, чтобы опрос сервера их не затирал
 let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '', lastStats = '', focusTheme = false;
 try { cur = localStorage.getItem('historian.account'); } catch(e) {}
 
@@ -388,6 +400,41 @@ function renderStats(){
              : '<td>–</td><td>–</td><td>–</td><td>–</td>') + '</tr>'; }).join('') + '</table>';
   $('stats').innerHTML = html;
 }
+function renderComments(){
+  const c = st.comments, a = st.account;
+  const key = JSON.stringify([a.id, a.has_token, c.loading, c.error, c.checked, c.items.map(i => [i.id, i.draft])]);
+  if(key === lastComs) return; lastComs = key;
+  $('comBtn').disabled = !a.has_token || c.loading;
+  if(c.loading) $('comMsg').innerHTML = '<span class="spin"></span>Проверяю';
+  else say($('comMsg'), c.checked ? 'проверено ' + c.checked.slice(11, 16) : '');
+  if(!a.has_token){ $('coms').innerHTML = '<p class="status">Комментарии появятся, когда вы сохраните токен Threads.</p>'; return; }
+  let html = c.error ? `<p class="status err">${esc(c.error)}</p>` : '';
+  if(!c.items.length && !c.error) html += `<p class="status">${c.checked ? 'Новых комментариев нет.' : 'Ещё не проверяли.'}</p>`;
+  html += c.items.map(i => `<div class="com" data-id="${esc(i.id)}">
+    <div class="who"><b>@${esc(i.username)}</b> · к посту ${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.subject)}</a>` : esc(i.subject)}${i.timestamp ? ' · ' + ddmmyyyy(i.timestamp.slice(0, 10)) : ''}</div>
+    <p class="txt">${esc(i.text)}</p>
+    <textarea placeholder="${i.suggest_skip ? 'ИИ считает, что отвечать не нужно. Можно написать самому.' : 'Ваш ответ'}"></textarea>
+    <div class="row"><button class="send">Ответить</button><button class="ghost skip">Пропустить</button><span class="status"></span></div></div>`).join('');
+  $('coms').innerHTML = html;
+  $('coms').querySelectorAll('.com').forEach(box => {
+    const id = box.dataset.id, item = c.items.find(i => i.id === id), ta = box.querySelector('textarea'), msg = box.querySelector('.status');
+    ta.value = comEdits[id] ?? item.draft; ta.oninput = () => { comEdits[id] = ta.value; };
+    const done = text => { box.innerHTML = `<p class="status ok">${text}</p>`; delete comEdits[id]; };
+    box.querySelector('.send').onclick = async e => {
+      e.target.disabled = true; say(msg, 'Отправляю…');
+      try { await api('/api/comments/send', {id: a.id, comment: id, text: ta.value}); done('✓ Ответ отправлен'); }
+      catch(err){ say(msg, err.message, 'err'); e.target.disabled = false; }
+    };
+    box.querySelector('.skip').onclick = async () => {
+      try { await api('/api/comments/skip', {id: a.id, comment: id}); done('Пропущено'); }
+      catch(err){ say(msg, err.message, 'err'); }
+    };
+  });
+}
+$('comBtn').onclick = async () => {
+  try { await api('/api/comments/check', {id: st.account.id}); lastComs = ''; await refresh(); }
+  catch(e){ say($('comMsg'), e.message, 'err'); }
+};
 $('statsBtn').onclick = async () => {
   try { await api('/api/stats', {id: st.account.id}); lastStats = ''; await refresh(); }
   catch(e){ say($('statsMsg'), e.message, 'err'); }
@@ -401,7 +448,7 @@ async function refresh(){
   // пока ждали ответ, переключились на другой аккаунт или что-то сохранили: ответ устарел
   if(want !== cur || seen !== changes) return;
   const prev = st; st = s; limit = st.limit; cur = st.account.id;
-  renderTabs(); renderSchedule(); renderStats();
+  renderTabs(); renderSchedule(); renderStats(); renderComments();
   if(shownAcc !== st.account.id){ shownAcc = st.account.id; renderAccount(); renderDraft(); renderStatus(); return; }
   syncToken(prev.account);
   const view = j => JSON.stringify([j.story, j.published, j.published_on, j.link]);

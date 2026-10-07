@@ -10,10 +10,7 @@ BASE = "https://graph.threads.net/v1.0"
 
 
 def _post(url: str, params: dict) -> dict:
-    r = requests.post(url, params=params, timeout=30)
-    if r.status_code >= 300:
-        raise RuntimeError(f"Threads API {r.status_code}: {r.text}")
-    return r.json()
+    return _check(requests.post(url, params=params, timeout=30))
 
 
 def _container(creds: ThreadsCredentials, text: str, reply_to: str | None, image_url: str | None) -> str:
@@ -94,7 +91,10 @@ class NoPermission(RuntimeError):
 
 
 def _get(url: str, params: dict) -> dict:
-    r = requests.get(url, params=params, timeout=30)
+    return _check(requests.get(url, params=params, timeout=30))
+
+
+def _check(r) -> dict:
     if r.status_code >= 300:
         try:
             err = r.json().get("error", {})
@@ -125,3 +125,27 @@ def followers(creds: ThreadsCredentials) -> int:
     data = _get(f"{BASE}/{creds.user_id}/threads_insights",
                 {"metric": "followers_count", "access_token": creds.access_token})["data"]
     return _value(data[0]) if data else 0
+
+
+# Комментарии. Нужны разрешения threads_read_replies (читать) и threads_manage_replies (отвечать).
+def conversation(creds: ThreadsCredentials, post_id: str, pages: int = 5) -> list[dict]:
+    """Все ответы под постом на любой глубине, включая продолжения нашей цепочки."""
+    params = {"fields": "id,text,username,timestamp,replied_to,hide_status", "reverse": "false",
+              "access_token": creds.access_token}
+    url, out = f"{BASE}/{post_id}/conversation", []
+    for _ in range(pages):
+        data = _get(url, params)
+        out += data.get("data", [])
+        url = (data.get("paging") or {}).get("next")
+        if not url:
+            break
+        params = {}  # в ссылке next параметры уже есть
+    return out
+
+
+def reply(creds: ThreadsCredentials, comment_id: str, text: str) -> str:
+    """Ответ на комментарий от имени аккаунта. Возвращает id ответа."""
+    container = _container(creds, text, comment_id, None)
+    time.sleep(5)
+    return _post(f"{BASE}/{creds.user_id}/threads_publish",
+                 {"creation_id": container, "access_token": creds.access_token})["id"]
