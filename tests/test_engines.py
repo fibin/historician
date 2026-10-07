@@ -4,7 +4,7 @@ import pytest
 
 from historian import engines
 
-STORY = {"person": "Тихо Браге", "topic": "лось", "threads_posts": ["Пост"],
+STORY = {"subject": "Тихо Браге", "topic": "лось", "threads_posts": ["Пост"],
          "sources": ["https://example.com"], "dossier": "Д"}
 
 
@@ -40,7 +40,7 @@ def test_claude_code_reads_structured_output(fake):
     assert "--json-schema" in calls["cmd"] and "WebSearch,WebFetch" in calls["cmd"]
     assert "Пётр I" in calls["input"]
     system = calls["cmd"][calls["cmd"].index("--system-prompt") + 1]
-    assert "Тема аккаунта, для которого ищешь: морские приключения" in system
+    assert "Тема аккаунта и пожелания к контенту:\nморские приключения" in system
     assert "Язык постов: English." in system and "не длиннее 480 символов" in system
     assert not any(k in system for k in ("{theme}", "{language}", "{max_len}"))
 
@@ -51,9 +51,9 @@ def test_codex_uses_search_schema_and_reads_last_message(fake):
     cmd = calls["cmd"]
     assert cmd[1:3] == ["--search", "exec"] and "--output-schema" in cmd and cmd[-1] == "-"
     assert "read-only" in cmd
-    assert story["person"] == "Тихо Браге" and story["engine"] == "codex"
+    assert story["subject"] == "Тихо Браге" and story["engine"] == "codex"
     # промпт целиком идёт через stdin, в аргументах нет переносов строк
-    assert "Ты историк" in calls["input"] and not any("\n" in a for a in cmd)
+    assert "Ты исследователь" in calls["input"] and "тема" in calls["input"] and not any("\n" in a for a in cmd)
 
 
 def test_gemini_parses_fenced_json(fake):
@@ -65,7 +65,7 @@ def test_gemini_parses_fenced_json(fake):
 
 
 def test_missing_fields_are_reported(fake):
-    fake(stdout=json.dumps({"response": json.dumps({"person": "X"})}))
+    fake(stdout=json.dumps({"response": json.dumps({"subject": "X"})}))
     with pytest.raises(RuntimeError, match="нет полей"):
         engines.generate_story("gemini", "-", "тема", "українська")
 

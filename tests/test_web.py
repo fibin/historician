@@ -10,7 +10,7 @@ import pytest
 from historian import accounts, dotenv, history, main, web
 from historian.publishers import threads as threads_pub
 
-STORY = {"person": "Тихо Браге", "topic": "лось", "threads_posts": ["Пост"], "sources": [], "engine": "codex"}
+STORY = {"subject": "Тихо Браге", "topic": "лось", "threads_posts": ["Пост"], "sources": [], "engine": "codex"}
 
 
 def test_dotenv_save_replaces_and_appends(tmp_path):
@@ -54,11 +54,14 @@ def test_update_account_validates(me):
     acc = accounts.ensure()[0]
     assert web.update_account(acc.id, {"post_time": "9:05", "theme": "  ", "name": "Наука "})["post_time"] == "09:05"
     saved = accounts.get(acc.id)
-    assert saved.theme == accounts.DEFAULT_THEME and saved.name == "Наука"
+    assert saved.theme == "" and saved.name == "Наука"
     for bad in ({"post_time": "25:00"}, {"engine": "nope"}, {"name": ""}, {"auto_publish": True}):
         with pytest.raises(ValueError):
             web.update_account(acc.id, bad)
     web.save_token(acc.id, "", "tok")
+    with pytest.raises(ValueError, match="о чём"):  # без темы автопубликация не включается
+        web.update_account(acc.id, {"auto_publish": True})
+    web.update_account(acc.id, {"theme": "космос"})
     assert web.update_account(acc.id, {"auto_publish": True})["auto_publish"] is True
 
 
@@ -80,7 +83,7 @@ def test_state_falls_back_to_first_account_and_picks_up_scheduler_posts():
     main.save_draft(STORY, acc.out_dir)
     history.save(acc.history_path, history.add([], STORY, {"threads": "1"}))
     job = web.state(acc.id)["job"]
-    assert job["story"]["person"] == "Тихо Браге" and job["published"] is True
+    assert job["story"]["subject"] == "Тихо Браге" and job["published"] is True
 
 
 @pytest.fixture

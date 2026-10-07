@@ -7,7 +7,7 @@ import pytest
 from historian import accounts, history, main
 from historian.publishers import threads as threads_pub
 
-STORY = {"person": "Тихо Браге", "topic": "лось", "threads_posts": ["Пост"], "sources": []}
+STORY = {"subject": "Тихо Браге", "topic": "лось", "threads_posts": ["Пост"], "sources": []}
 
 
 def test_migrates_old_settings_once(tmp_path, monkeypatch):
@@ -25,12 +25,19 @@ def test_migrates_old_settings_once(tmp_path, monkeypatch):
     [acc] = accounts.ensure()
     assert (acc.id, acc.engine, acc.auto_publish, acc.threads_username) == ("main", "codex", True, "hist")
     assert acc.creds().user_id == "42" and acc.language == "українська"
-    assert acc.history()[0]["person"] == "Франклин"
+    assert acc.theme == accounts.HISTORY_THEME  # перенесённый аккаунт пишет, как раньше
+    assert history.subject_of(acc.history()[0]) == "Франклин"
     assert (tmp_path / "accounts" / "main" / "out" / "2026-10-07.json").exists()
     assert (tmp_path / "data" / "history.json").exists()  # старые файлы на месте
 
     monkeypatch.setenv("THREADS_ACCESS_TOKEN", "other")
     assert [a.threads_token for a in accounts.ensure()] == ["tok"]  # второй раз не переносит
+
+
+def test_old_default_theme_becomes_detailed_history_theme():
+    acc = accounts.create("A", theme=accounts._OLD_DEFAULT_THEME)
+    assert accounts.get(acc.id).theme == accounts.HISTORY_THEME
+    assert accounts.create("B").theme == ""
 
 
 def test_create_list_get_delete():
