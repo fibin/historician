@@ -92,7 +92,7 @@ def test_published_post_shows_link_from_journal_or_threads(me, monkeypatch):
     web.save_token(acc.id, "", "tok")
     acc = accounts.get(acc.id)
     # опубликован в окне: ссылка сразу из журнала
-    monkeypatch.setattr(threads_pub, "post_thread", lambda creds, parts: ["77"])
+    monkeypatch.setattr(threads_pub, "post_thread", lambda creds, parts, image_url=None: ["77"])
     main.save_draft(STORY, acc.out_dir)
     job = web.job_for(acc)
     web.do_publish(acc.id, job, ["Пост"])
@@ -143,3 +143,25 @@ def test_http_api(server):
     assert _post(server + "/api/publish", {"id": "science", "posts": ["x"]})[0] == 400
     assert _post(server + "/api/account", {"id": "science", "name": "x"}, origin="https://evil.example")[0] == 403
     assert _post(server + "/api/account", {"id": "../main", "name": "x"})[0] == 400
+
+
+def test_publish_uses_picked_image_and_rejects_unknown(me, monkeypatch):
+    acc = accounts.ensure()[0]
+    web.save_token(acc.id, "", "tok")
+    acc = accounts.get(acc.id)
+    assert web.update_account(acc.id, {"with_image": False})["with_image"] is False
+    sent = {}
+    monkeypatch.setattr(threads_pub, "post_thread", lambda creds, parts, image_url=None: sent.update(img=image_url) or ["8"])
+    imgs = [{"url": f"https://u/{i}.jpg", "page": f"p{i}", "attribution": False} for i in range(2)]
+    main.save_draft({**STORY, "images": imgs, "image": 0}, acc.out_dir)
+    job = web.job_for(acc)
+    web.do_publish(acc.id, job, ["Пост"], 1)
+    assert sent["img"] == "https://u/1.jpg" and acc.history()[-1]["posted"]["image"] == "p1"
+
+
+def test_http_publish_checks_image_index(server, me):
+    acc = accounts.ensure()[0]
+    web.save_token(acc.id, "", "tok")
+    main.save_draft({**STORY, "images": [{"url": "u", "page": "p"}], "image": 0}, accounts.get(acc.id).out_dir)
+    code, body = _post(server + "/api/publish", {"id": acc.id, "posts": ["x"], "image": 5})
+    assert code == 400 and "картинки" in body["error"]

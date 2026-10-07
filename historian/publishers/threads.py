@@ -1,4 +1,5 @@
 """Публикация в Threads через Threads API (graph.threads.net)."""
+import sys
 import time
 
 import requests
@@ -15,15 +16,45 @@ def _post(url: str, params: dict) -> dict:
     return r.json()
 
 
-def post_thread(creds: ThreadsCredentials, parts: list[str]) -> list[str]:
+def _container(creds: ThreadsCredentials, text: str, reply_to: str | None, image_url: str | None) -> str:
+    params = {"media_type": "TEXT", "text": text, "access_token": creds.access_token}
+    if image_url:
+        params.update(media_type="IMAGE", image_url=image_url)
+    if reply_to:
+        params["reply_to_id"] = reply_to
+    return _post(f"{BASE}/{creds.user_id}/threads", params)["id"]
+
+
+def _wait_ready(creds: ThreadsCredentials, container: str, timeout: int = 60) -> None:
+    """Картинку Threads скачивает и обрабатывает сам: ждём, пока контейнер будет готов."""
+    deadline = time.monotonic() + timeout
+    while True:
+        st = _get(f"{BASE}/{container}", {"fields": "status,error_message", "access_token": creds.access_token})
+        if st.get("status") == "FINISHED":
+            return
+        if st.get("status") in ("ERROR", "EXPIRED") or time.monotonic() > deadline:
+            raise RuntimeError(f"Threads не принял картинку: {st.get('error_message') or st.get('status')}")
+        time.sleep(3)
+
+
+def post_thread(creds: ThreadsCredentials, parts: list[str], image_url: str | None = None) -> list[str]:
+    """Публикует цепочку. Картинка (если есть) идёт с первым постом; если Threads её не принял,
+    первый пост выходит без картинки, чтобы публикация не сорвалась."""
     ids: list[str] = []
-    for text in parts:
-        params = {"media_type": "TEXT", "text": text, "access_token": creds.access_token}
-        if ids:
-            params["reply_to_id"] = ids[-1]
-        container = _post(f"{BASE}/{creds.user_id}/threads", params)["id"]
-        # Meta рекомендует подождать, пока контейнер обработается, перед публикацией.
-        time.sleep(5)
+    for i, text in enumerate(parts):
+        reply_to = ids[-1] if ids else None
+        container = None
+        if i == 0 and image_url:
+            try:
+                container = _container(creds, text, reply_to, image_url)
+                _wait_ready(creds, container)
+            except Exception as e:
+                print(f"Картинка не прикрепилась, публикую без неё: {e}", file=sys.stderr)
+                container = None
+        if container is None:
+            container = _container(creds, text, reply_to, None)
+            # Meta рекомендует подождать, пока контейнер обработается, перед публикацией.
+            time.sleep(5)
         published = _post(f"{BASE}/{creds.user_id}/threads_publish",
                            {"creation_id": container, "access_token": creds.access_token})
         ids.append(published["id"])

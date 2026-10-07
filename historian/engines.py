@@ -97,8 +97,11 @@ def _parse_json_reply(text: str) -> dict:
         raise RuntimeError(f"Модель вернула не JSON: {text[:500]}")
 
 
+OPTIONAL = {"image_queries"}  # без них пост просто выйдет без картинки
+
+
 def _validate(story: dict) -> dict:
-    missing = [k for k in SCHEMA["required"] if k not in story]
+    missing = [k for k in SCHEMA["required"] if k not in story and k not in OPTIONAL]
     if missing or not isinstance(story.get("threads_posts"), list) or not story["threads_posts"]:
         raise RuntimeError(f"В ответе модели нет полей: {', '.join(missing) or 'threads_posts'}")
     return story

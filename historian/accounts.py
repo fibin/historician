@@ -45,6 +45,7 @@ class Account:
     engine: str = "claude-code"
     post_time: str = "10:00"
     auto_publish: bool = False
+    with_image: bool = True   # искать картинку к первому посту на Wikimedia Commons
     threads_user_id: str = ""
     threads_token: str = ""
     threads_username: str = ""

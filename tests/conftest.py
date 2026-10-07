@@ -1,6 +1,6 @@
 import pytest
 
-from historian import accounts, web
+from historian import accounts, images, web
 from historian.publishers import threads as threads_pub
 
 
@@ -14,5 +14,6 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(threads_pub, "permalink", lambda creds, post_id: f"https://www.threads.net/@x/post/{post_id}")
     monkeypatch.setattr(threads_pub, "followers", lambda creds: 0)
     monkeypatch.setattr(threads_pub, "post_insights", lambda creds, post_id: {})
+    monkeypatch.setattr(images, "search", lambda query, limit=10: [])
     web.jobs.clear()
     return tmp_path

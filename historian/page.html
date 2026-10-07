@@ -53,6 +53,10 @@ table.stats th:first-child,table.stats td:first-child{text-align:left;padding-le
 table.stats td{border-top:1px solid var(--line);padding:7px 0 7px 10px;text-align:right;font-variant-numeric:tabular-nums;vertical-align:top}
 table.stats td:first-child{width:100%}table.stats td .t{color:var(--muted);font-size:12px;display:block}
 table.stats tr.top td:first-child a{font-weight:600}
+.pic{display:flex;gap:14px;align-items:flex-start;margin:0 0 14px}
+.pic img{width:150px;max-height:190px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.pic .cap{font-size:13px;color:var(--muted);flex:1;min-width:0}.pic .cap b{color:var(--ink);font-weight:500;display:block;overflow-wrap:anywhere}
+.pic .row{margin-top:8px}.pic button{font-size:13px;padding:6px 11px}
 </style></head><body><main>
 <h1>Historian</h1><p class="sub">Генерация и публикация постов в Threads</p>
 
@@ -111,6 +115,8 @@ table.stats tr.top td:first-child a{font-weight:600}
 <div><label for="engine">ИИ для текстов</label><select id="engine"></select></div>
 </div>
 <div id="engineNote" class="engine-note"></div>
+<label style="margin-top:16px;color:var(--ink);font-size:15px"><input type="checkbox" id="withImg">Картинка к посту из Wikimedia Commons</label>
+<p class="hint">Архивные фото, картины, карты со свободной лицензией. Если лицензия просит указать автора, бот добавит подпись в конец цепочки.</p>
 <label style="margin-top:16px;color:var(--ink);font-size:15px"><input type="checkbox" id="auto">Публиковать каждый день сам в <input type="time" id="time" style="margin-left:6px"></label>
 <p class="hint" id="autoHint"></p>
 <hr>
@@ -135,6 +141,7 @@ table.stats tr.top td:first-child a{font-weight:600}
 </main>
 <script>
 const $ = id => document.getElementById(id);
+let pic = null;  // номер выбранной картинки в черновике или null
 let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '', lastStats = '', focusTheme = false;
 try { cur = localStorage.getItem('historian.account'); } catch(e) {}
 
@@ -189,7 +196,7 @@ function renderAccount(){
   const a = st.account;
   $('name').value = a.name; $('theme').value = a.theme; $('lang').value = a.language;
   $('engine').innerHTML = st.engines.map(e => `<option value="${e.id}" ${e.id === a.engine ? 'selected' : ''}>${esc(e.label)}${e.available ? '' : ' (не установлен)'}</option>`).join('');
-  $('auto').checked = a.auto_publish; $('time').value = a.post_time;
+  $('auto').checked = a.auto_publish; $('time').value = a.post_time; $('withImg').checked = a.with_image;
   engineNote(); autoHint(); say($('setMsg'), '');
   $('uid').value = a.threads_user_id; $('tok').value = ''; say($('saveMsg'), '');
   renderToken();
@@ -228,6 +235,7 @@ $('theme').onchange = e => saveField('theme', e.target.value);
 $('lang').onchange = e => saveField('language', e.target.value);
 $('engine').onchange = e => saveField('engine', e.target.value);
 $('auto').onchange = e => saveField('auto_publish', e.target.checked);
+$('withImg').onchange = e => saveField('with_image', e.target.checked);
 $('time').onchange = e => { if(e.target.value) saveField('post_time', e.target.value); };
 
 function renderDraft(){
@@ -241,13 +249,28 @@ function renderDraft(){
   }
   const eng = st.engines.find(e => e.id === s.engine);
   d.innerHTML = `<p class="subject">${esc(s.subject || s.person || '')}</p><p class="topic">${esc(s.topic)}${eng ? ' · ' + esc(eng.label) : ''}</p>
+    <div id="pic"></div>
     <div id="posts"></div>
     <button class="ghost" id="add">+ Добавить пост</button>
     <div class="sources" style="margin-top:14px">${(s.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('')}</div>
     <div class="row"><button id="pub">Опубликовать</button><span id="pubMsg" class="status"></span></div>`;
+  pic = s.image ?? null; renderPic();
   s.threads_posts.forEach(addPost);
   $('add').onclick = () => { addPost(''); editing = true; };
   $('pub').onclick = publish;
+}
+function renderPic(){
+  const opts = st.job.story.images || [], img = pic === null ? null : opts[pic];
+  if(!opts.length){ $('pic').innerHTML = ''; return; }
+  $('pic').innerHTML = img
+    ? `<div class="pic"><a href="${esc(img.page)}" target="_blank" rel="noopener"><img src="${esc(img.preview)}" alt=""></a>
+       <div class="cap"><b>${esc(img.title)}</b>${esc([img.author, img.license].filter(Boolean).join(' · '))}
+       ${img.attribution ? '<br>Подпись с автором добавится в конец цепочки.' : ''}
+       <div class="row">${opts.length > 1 ? `<button class="ghost" id="picNext">Другая (${pic + 1} из ${opts.length})</button>` : ''}<button class="ghost" id="picOff">Без картинки</button></div></div></div>`
+    : `<div class="row" style="margin:0 0 14px"><button class="ghost" id="picOn">+ Картинка</button><span class="status">Пост выйдет без картинки</span></div>`;
+  if($('picNext')) $('picNext').onclick = () => { pic = (pic + 1) % opts.length; editing = true; renderPic(); };
+  if($('picOff')) $('picOff').onclick = () => { pic = null; editing = true; renderPic(); };
+  if($('picOn')) $('picOn').onclick = () => { pic = 0; editing = true; renderPic(); };
 }
 function addPost(text){
   const wrap = document.createElement('div'); wrap.className = 'post';
@@ -344,7 +367,7 @@ async function refresh(){
 }
 async function publish(){
   const posts = [...document.querySelectorAll('#posts textarea')].map(t => t.value);
-  try { await api('/api/publish', {id: st.account.id, posts, draft: st.job.draft}); editing = false; await refresh(); }
+  try { await api('/api/publish', {id: st.account.id, posts, draft: st.job.draft, image: pic}); editing = false; await refresh(); }
   catch(e){ say($('pubMsg'), e.message, 'err'); }
 }
 $('gen').onclick = async () => {

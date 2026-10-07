@@ -62,7 +62,7 @@ def test_publish_from_draft_records_history(tmp_path, monkeypatch):
     for k in ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"):
         monkeypatch.setenv(k, "v")  # из старого .env создаётся первый аккаунт
     sent = {}
-    monkeypatch.setattr(threads_pub, "post_thread", lambda c, p: sent.setdefault("t", p) and ["222"])
+    monkeypatch.setattr(threads_pub, "post_thread", lambda c, p, image_url=None: sent.setdefault("t", p) and ["222"])
     main.main(["--from-draft", str(draft), "--publish"])
     saved = history.load(str(tmp_path / "accounts" / "main" / "history.json"))
     assert saved[0]["subject"] == "Тихо Браге"

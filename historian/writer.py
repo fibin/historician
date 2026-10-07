@@ -22,7 +22,10 @@ SYSTEM = """Ты автор аккаунта в Threads. Тема аккаунт
   если тема не просит иначе. Вопрос живой и по делу, не «Что думаете?».
 - subject: о ком или о чём публикация (коротко, для журнала: по нему бот не даёт повторяться).
 - topic: одна строка, о чём публикация.
-- sources: 2–4 URL из досье, на которые опирается текст."""
+- sources: 2–4 URL из досье, на которые опирается текст.
+- image_queries: 2–3 поисковых запроса на английском для Wikimedia Commons, чтобы найти картинку к первому посту:
+  портрет человека, место, предмет, событие, гравюра, карта. От самого точного (имя + что именно) к более общему.
+  Пустой список, если показывать нечего или тема просит без картинок."""
 
 SCHEMA = {
     "type": "object",
@@ -31,8 +34,9 @@ SCHEMA = {
         "topic": {"type": "string"},
         "threads_posts": {"type": "array", "items": {"type": "string"}},
         "sources": {"type": "array", "items": {"type": "string"}},
+        "image_queries": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["subject", "topic", "threads_posts", "sources"],
+    "required": ["subject", "topic", "threads_posts", "sources", "image_queries"],
     "additionalProperties": False,
 }
 

@@ -147,6 +147,8 @@ def update_account(account_id: str, data: dict) -> dict:
         if not m or int(m[1]) > 23 or int(m[2]) > 59:
             raise ValueError("Время в формате ЧЧ:ММ, например 10:00")
         acc.post_time = f"{int(m[1]):02d}:{m[2]}"
+    if "with_image" in data:
+        acc.with_image = bool(data["with_image"])
     if "auto_publish" in data:
         if data["auto_publish"] and not acc.creds():
             raise ValueError("Сначала сохраните токен Threads для этого аккаунта")
@@ -210,9 +212,9 @@ def do_generate(account_id: str, job: dict) -> None:
     job.update(story=story, draft=path, published=False, link=None)
 
 
-def do_publish(account_id: str, job: dict, posts: list[str]) -> None:
+def do_publish(account_id: str, job: dict, posts: list[str], image: int | None = None) -> None:
     acc = accounts.get(account_id)
-    story = main.fit_story(dict(job["story"], threads_posts=posts))
+    story = main.fit_story(dict(job["story"], threads_posts=posts, image=image))
     main.check_not_recent(story, acc.history())
     posted = main.publish_and_record(acc, story)
     if job["draft"]:
@@ -319,7 +321,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Пока вы правили посты, появился новый черновик. Обновите страницу.")
                 if not acc.creds():
                     raise ValueError("Сначала сохраните токен Threads для этого аккаунта")
-                ok = _run(acc_id, "publishing", lambda job: do_publish(acc_id, job, posts))
+                image = body.get("image")
+                if image is not None and not (isinstance(image, int) and 0 <= image < len(job["story"].get("images") or [])):
+                    raise ValueError("Такой картинки нет в черновике")
+                ok = _run(acc_id, "publishing", lambda job: do_publish(acc_id, job, posts, image))
                 return self._send(200 if ok else 409, {"ok": ok})
             if self.path == "/api/stats":
                 acc = accounts.get(acc_id)
