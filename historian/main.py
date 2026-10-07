@@ -16,7 +16,7 @@ from datetime import date, datetime
 
 from . import accounts, history, images, research, stats, writer
 from .config import LANGUAGE, THREADS_LIMIT, ThreadsCredentials, env_flag
-from .textfit import fit, plain_length
+from .textfit import fit, merge_to, plain_length
 
 MAX_ATTEMPTS = 3        # сколько раз искать другой материал, если такой предмет уже был
 MAX_DAILY_ATTEMPTS = 2  # сколько раз в день планировщик пробует опубликовать, если что-то сломалось
@@ -29,9 +29,12 @@ def normalize(story: dict) -> dict:
     return story
 
 
-def fit_story(story: dict) -> dict:
+def fit_story(story: dict, most: int | None = None) -> dict:
+    """Режет слишком длинные посты; если задано most и постов больше, склеивает короткие соседние."""
     story = normalize(story)
     story["threads_posts"] = fit(story["threads_posts"], THREADS_LIMIT, plain_length)
+    if most:
+        story["threads_posts"] = merge_to(story["threads_posts"], most, THREADS_LIMIT, plain_length)
     return story
 
 
@@ -43,8 +46,9 @@ def add_images(story: dict) -> dict:
 
 
 def generate(engine: str, entries: list[dict], theme: str, language: str = LANGUAGE,
-             with_image: bool = True) -> dict:
-    """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу."""
+             with_image: bool = True, posts: tuple[int, int] = writer.DEFAULT_POSTS) -> dict:
+    """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу.
+    posts: сколько постов в цепочке, от и до."""
     if not theme.strip():
         raise SystemExit("Опишите в настройках аккаунта, о чём он: без темы ИИ не знает, что искать")
     client = None
@@ -57,23 +61,24 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if engine != "api":
             from . import engines
-            story = engines.generate_story(engine, summary, theme, language, feedback)
+            story = engines.generate_story(engine, summary, theme, language, feedback, posts=posts)
         else:
             dossier, urls = research.find_story(client, summary, theme, feedback)
-            story = writer.write_posts(client, dossier, urls, theme, language, feedback)
+            story = writer.write_posts(client, dossier, urls, theme, language, feedback, posts=posts)
             story["dossier"] = dossier
             story["engine"] = "api"
         if history.key(story) in used:
             print(f"[{attempt}] «{history.subject_of(story)}» уже был недавно, ищу другой материал", file=sys.stderr)
             continue
-        story = fit_story(story)
+        story = fit_story(story, posts[1])
         return add_images(story) if with_image else story
     raise RuntimeError("Не удалось найти новый материал: ИИ трижды предложил то, что уже было")
 
 
 def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
     stats.refresh(acc)  # свежие цифры, чтобы ИИ видел, что заходит
-    return generate(engine or acc.engine, acc.history(), acc.theme, acc.language, acc.with_image)
+    return generate(engine or acc.engine, acc.history(), acc.theme, acc.language, acc.with_image,
+                    (acc.posts_min, acc.posts_max))
 
 
 def publish(story: dict, creds: ThreadsCredentials | None) -> dict:

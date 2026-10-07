@@ -46,6 +46,8 @@ class Account:
     post_time: str = "10:00"
     auto_publish: bool = False
     with_image: bool = True   # искать картинку к первому посту на Wikimedia Commons
+    posts_min: int = 1        # сколько постов в цепочке: от и до
+    posts_max: int = 10
     threads_user_id: str = ""
     threads_token: str = ""
     threads_username: str = ""

@@ -20,11 +20,11 @@ SCHEMA = {
 }
 
 
-def system_prompt(theme: str, language: str) -> str:
+def system_prompt(theme: str, language: str, posts: tuple[int, int] = writer.DEFAULT_POSTS) -> str:
     return (
         research.system_prompt(theme)
         + "\n\n---\nКогда досье готово, сам напиши по нему посты.\n\n"
-        + writer.system_prompt(theme, language)
+        + writer.system_prompt(theme, language, posts)
         + "\n\nВ поле dossier положи досье целиком (в формате выше)."
     )
 
@@ -176,8 +176,8 @@ def ask(engine: str, system: str, user: str, schema: dict, search: bool = False,
 
 
 def generate_story(engine: str, history_summary: str, theme: str, language: str, feedback: str = "",
-                   timeout: int = 1800) -> dict:
-    story = _validate(ask(engine, system_prompt(theme, language), _user_prompt(history_summary, feedback),
+                   timeout: int = 1800, posts: tuple[int, int] = writer.DEFAULT_POSTS) -> dict:
+    story = _validate(ask(engine, system_prompt(theme, language, posts), _user_prompt(history_summary, feedback),
                           SCHEMA, search=True, timeout=timeout))
     story["engine"] = engine
     return story

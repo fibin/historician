@@ -40,3 +40,15 @@ def fit(posts: list[str], limit: int, measure) -> list[str]:
         if p:
             out.extend(_split_one(p, limit, measure))
     return out
+
+
+def merge_to(posts: list[str], most: int, limit: int, measure) -> list[str]:
+    """Если постов больше, чем most, склеивает соседние, пока склейка помещается в limit."""
+    posts = list(posts)
+    while len(posts) > most:
+        sizes = [(measure(posts[i] + "\n\n" + posts[i + 1]), i) for i in range(len(posts) - 1)]
+        size, i = min(sizes)
+        if size > limit:
+            break
+        posts[i:i + 2] = [posts[i] + "\n\n" + posts[i + 1]]
+    return posts

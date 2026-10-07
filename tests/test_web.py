@@ -165,3 +165,26 @@ def test_http_publish_checks_image_index(server, me):
     main.save_draft({**STORY, "images": [{"url": "u", "page": "p"}], "image": 0}, accounts.get(acc.id).out_dir)
     code, body = _post(server + "/api/publish", {"id": acc.id, "posts": ["x"], "image": 5})
     assert code == 400 and "картинки" in body["error"]
+
+
+def test_posts_per_chain_setting_reaches_the_prompt(monkeypatch):
+    from historian import engines, writer
+    acc = accounts.ensure()[0]
+    assert web.update_account(acc.id, {"posts_min": "2", "posts_max": "4"})["posts_max"] == 4
+    for bad in ({"posts_min": 5, "posts_max": 3}, {"posts_min": 0}, {"posts_max": 99}, {"posts_max": "x"}):
+        with pytest.raises(ValueError):
+            web.update_account(acc.id, bad)
+    assert (accounts.get(acc.id).posts_min, accounts.get(acc.id).posts_max) == (2, 4)
+    assert "цепочка из 2–4 постов" in engines.system_prompt("t", "uk", (2, 4))
+    assert "ровно из 3 постов" in writer.system_prompt("t", "uk", (3, 3))
+    assert "один пост, без цепочки" in writer.system_prompt("t", "uk", (1, 1))
+    seen = {}
+
+    def fake(engine, summary, theme, language, feedback="", posts=(1, 10)):
+        seen["posts"] = posts
+        return {"subject": "X", "topic": "t", "threads_posts": ["a", "b", "c", "d", "e", "f"], "sources": []}
+    monkeypatch.setattr(engines, "generate_story", fake)
+    acc = accounts.get(acc.id)
+    acc.theme = "тема"
+    story = main.generate_for(acc)
+    assert seen["posts"] == (2, 4) and len(story["threads_posts"]) == 4  # лишние короткие посты склеены
