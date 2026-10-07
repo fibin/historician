@@ -260,11 +260,11 @@ def _description(script: dict, pics: list[dict | None]) -> str:
     credits = []
     for img in pics:
         if img and img["page"] not in {c[0] for c in credits}:
-            who = f"{img['author']}, " if img.get("author") else ""
-            credits.append((img["page"], f"{who}{img['license']}: {img['page']}"))
+            who = ", ".join(x for x in (img.get("author"), img.get("license")) if x)
+            credits.append((img["page"], f"{who}: {img['page']}" if who else img["page"]))
     text = f"{script['title']}\n\n{script['description']}"
     if credits:
-        text += "\n\n🖼 Wikimedia Commons\n" + "\n".join(c[1] for c in credits)
+        text += "\n\n🖼\n" + "\n".join(c[1] for c in credits)
     return text
 
 

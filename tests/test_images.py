@@ -134,3 +134,62 @@ def test_window_can_search_again_for_an_old_draft(monkeypatch):
     assert r["image"] == 0 and r["images"][0]["page"] == "p1"
     import json
     assert json.load(open(draft, encoding="utf-8"))["images"][0]["page"] == "p1"
+
+
+REAL_FROM_ARTICLE = images.from_article  # conftest подменяет его заглушкой
+
+PAGE_HTML = """<html><head>
+<meta name="twitter:image" content="https://cdn.example.com/tw.jpg">
+<meta content="/img/lead.jpg?w=1200&amp;q=80" property="og:image" />
+<meta property='og:title' content='ChatGPT for Teens: &quot;звіт&quot;'>
+</head></html>"""
+
+
+class _Page:
+    def __init__(self, text="", headers=None, status=200, url="https://www.example.com/news/1"):
+        self.text, self.headers, self.status_code, self.url = text, headers or {}, status, url
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise OSError(self.status_code)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_meta_image_prefers_og_and_unescapes():
+    assert images._meta_image(PAGE_HTML) == ("/img/lead.jpg?w=1200&q=80", 'ChatGPT for Teens: "звіт"')
+    assert images._meta_image("<meta name='twitter:image' content='https://x/y.png'>") == ("https://x/y.png", "")
+
+
+def test_article_image_is_checked_and_credited(monkeypatch):
+    monkeypatch.setattr(images, "from_article", REAL_FROM_ARTICLE)
+    kinds = {"https://www.example.com/img/lead.jpg?w=1200&q=80": "image/jpeg"}
+
+    def get(url, headers, timeout, stream=False):
+        if url.startswith("https://www.example.com/news"):
+            return _Page(PAGE_HTML)
+        return _Page(headers={"Content-Type": kinds.get(url, "image/webp"), "Content-Length": "200000"})
+    monkeypatch.setattr(images.requests, "get", get)
+    img = images.from_article("https://www.example.com/news/1")
+    assert img["url"] == "https://www.example.com/img/lead.jpg?w=1200&q=80"
+    assert (img["author"], img["source"], img["page"]) == ("example.com", "article", "https://www.example.com/news/1")
+    assert images.credit(img) == "🖼 example.com"
+    kinds.clear()  # сайт отдаёт только webp: Threads не примет
+    assert images.from_article("https://www.example.com/news/1") is None
+
+
+def test_collect_follows_account_order(monkeypatch):
+    commons = {"url": "c.jpg", "page": "c"}
+    article = {"url": "a.jpg", "page": "a", "source": "article"}
+    monkeypatch.setattr(images, "search", lambda q, limit=10: [commons])
+    monkeypatch.setattr(images, "from_article", lambda url: article)
+    assert [i["url"] for i in images.collect(["q"], ["https://s"], "article+commons")[0]] == ["a.jpg", "c.jpg"]
+    assert [i["url"] for i in images.collect(["q"], ["https://s"], "commons")[0]] == ["c.jpg"]
+    monkeypatch.setattr(images, "search", lambda q, limit=10: [])
+    monkeypatch.setattr(images, "from_article", lambda url: None)
+    found, note = images.collect(["q"], ["https://s"], "commons+article")
+    assert found == [] and "ничего не нашлось" in note and "JPEG или PNG" in note

@@ -16,7 +16,7 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import accounts, comments, engines, history, main, stats, video, writer
+from . import accounts, comments, engines, history, images, main, stats, video, writer
 from .config import LANGUAGE, THREADS_LIMIT
 from .publishers import threads as threads_pub
 
@@ -192,6 +192,10 @@ def update_account(account_id: str, data: dict) -> dict:
         if not 1 <= lo <= hi <= writer.MAX_POSTS:
             raise ValueError(f"Постов в цепочке: от 1 до {writer.MAX_POSTS}, и «от» не больше «до»")
         acc.posts_min, acc.posts_max = lo, hi
+    if "image_source" in data:
+        if data["image_source"] not in images.SOURCES:
+            raise ValueError("Неизвестный источник картинок")
+        acc.image_source = data["image_source"]
     if "with_image" in data:
         acc.with_image = bool(data["with_image"])
     if "auto_publish" in data:
@@ -279,7 +283,7 @@ def find_image(account_id: str) -> dict:
         raise ValueError("Дождитесь, пока закончится текущая работа")
     if not job["story"] or not job["draft"] or job["published"]:
         raise ValueError("Картинку можно добавить только к неопубликованному черновику")
-    story = main.add_images(dict(job["story"]))
+    story = main.add_images(dict(job["story"]), acc.image_source)
     main.save_draft(story, acc.out_dir, job["draft"])
     job["story"] = story
     return {"images": story["images"], "image": story["image"], "image_note": story["image_note"]}

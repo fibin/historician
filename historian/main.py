@@ -38,19 +38,21 @@ def fit_story(story: dict, most: int | None = None) -> dict:
     return story
 
 
-def add_images(story: dict) -> dict:
-    """Варианты картинки с Wikimedia Commons; первая выбрана, в окне можно сменить или убрать.
-    Последний запрос — сам предмет публикации: точные запросы ИИ иногда ничего не находят."""
+def add_images(story: dict, source: str = images.DEFAULT_SOURCE) -> dict:
+    """Варианты картинки (Wikimedia Commons и статьи-источники, в порядке из настроек аккаунта);
+    первая выбрана, в окне можно сменить или убрать.
+    Последний запрос к Commons — сам предмет публикации: точные запросы ИИ иногда ничего не находят."""
     queries = list(story.get("image_queries") or [])
     if history.subject_of(story) and history.subject_of(story) not in queries:
         queries.append(history.subject_of(story))
-    story["images"], story["image_note"] = images.find_explained(queries)
+    story["images"], story["image_note"] = images.collect(queries, story.get("sources") or [], source)
     story["image"] = 0 if story["images"] else None
     return story
 
 
 def generate(engine: str, entries: list[dict], theme: str, language: str = LANGUAGE,
-             with_image: bool = True, posts: tuple[int, int] = writer.DEFAULT_POSTS) -> dict:
+             with_image: bool = True, posts: tuple[int, int] = writer.DEFAULT_POSTS,
+             image_source: str = images.DEFAULT_SOURCE) -> dict:
     """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу.
     posts: сколько постов в цепочке, от и до."""
     if not theme.strip():
@@ -75,14 +77,14 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
             print(f"[{attempt}] «{history.subject_of(story)}» уже был недавно, ищу другой материал", file=sys.stderr)
             continue
         story = fit_story(story, posts[1])
-        return add_images(story) if with_image else story
+        return add_images(story, image_source) if with_image else story
     raise RuntimeError("Не удалось найти новый материал: ИИ трижды предложил то, что уже было")
 
 
 def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
     stats.refresh(acc)  # свежие цифры, чтобы ИИ видел, что заходит
     return generate(engine or acc.engine, acc.history(), acc.theme, acc.language, acc.with_image,
-                    (acc.posts_min, acc.posts_max))
+                    (acc.posts_min, acc.posts_max), acc.image_source)
 
 
 def publish(story: dict, creds: ThreadsCredentials | None) -> dict:
