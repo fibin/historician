@@ -41,11 +41,13 @@ jobs:
         if: always()
         with:
           name: draft
-          path: out/
+          path: accounts/main/out/
           if-no-files-found: ignore
       - name: Save history
         run: |
           git config user.name "historian-bot"
           git config user.email "historian-bot@users.noreply.github.com"
+          # аккаунт создаётся из секретов в accounts/main, журнал переносим обратно в репозиторий
+          if [ -f accounts/main/history.json ]; then cp accounts/main/history.json data/history.json; fi
           git add data/history.json
           git diff --cached --quiet || (git commit -m "history: $(date -u +%F)" && git push)

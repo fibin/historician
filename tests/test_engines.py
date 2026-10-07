@@ -35,15 +35,19 @@ def fake(monkeypatch):
 
 def test_claude_code_reads_structured_output(fake):
     calls = fake(stdout=json.dumps({"is_error": False, "structured_output": STORY}))
-    story = engines.generate_story("claude-code", "- Пётр I: x")
+    story = engines.generate_story("claude-code", "- Пётр I: x", "морские приключения", "English")
     assert story["engine"] == "claude-code" and story["dossier"] == "Д"
     assert "--json-schema" in calls["cmd"] and "WebSearch,WebFetch" in calls["cmd"]
     assert "Пётр I" in calls["input"]
+    system = calls["cmd"][calls["cmd"].index("--system-prompt") + 1]
+    assert "Тема аккаунта, для которого ищешь: морские приключения" in system
+    assert "Язык постов: English." in system and "не длиннее 480 символов" in system
+    assert not any(k in system for k in ("{theme}", "{language}", "{max_len}"))
 
 
 def test_codex_uses_search_schema_and_reads_last_message(fake):
     calls = fake(write=json.dumps(STORY, ensure_ascii=False))
-    story = engines.generate_story("codex", "-")
+    story = engines.generate_story("codex", "-", "тема", "українська")
     cmd = calls["cmd"]
     assert cmd[1:3] == ["--search", "exec"] and "--output-schema" in cmd and cmd[-1] == "-"
     assert "read-only" in cmd
@@ -55,7 +59,7 @@ def test_codex_uses_search_schema_and_reads_last_message(fake):
 def test_gemini_parses_fenced_json(fake):
     reply = "Вот результат:\n```json\n" + json.dumps(STORY, ensure_ascii=False) + "\n```"
     calls = fake(stdout=json.dumps({"response": reply}))
-    story = engines.generate_story("gemini", "-")
+    story = engines.generate_story("gemini", "-", "тема", "українська")
     assert story["topic"] == "лось" and story["engine"] == "gemini"
     assert "--allowed-tools=google_web_search,web_fetch" in calls["cmd"] and not any("\n" in a for a in calls["cmd"])
 
@@ -63,11 +67,11 @@ def test_gemini_parses_fenced_json(fake):
 def test_missing_fields_are_reported(fake):
     fake(stdout=json.dumps({"response": json.dumps({"person": "X"})}))
     with pytest.raises(RuntimeError, match="нет полей"):
-        engines.generate_story("gemini", "-")
+        engines.generate_story("gemini", "-", "тема", "українська")
 
 
 def test_missing_program_explains_setup(monkeypatch):
     monkeypatch.setattr(engines.shutil, "which", lambda name: None)
     monkeypatch.delenv("CODEX_BIN", raising=False)
     with pytest.raises(SystemExit, match="codex"):
-        engines.generate_story("codex", "-")
+        engines.generate_story("codex", "-", "тема", "українська")
