@@ -52,6 +52,10 @@ def test_check_finds_unanswered_and_drafts_replies(acc, monkeypatch):
     monkeypatch.setattr(engines, "ask", lambda *a, **k: pytest.fail("no new comments"))
     comments.check(acc)
     assert len(comments.load(acc)["items"]) == 2
+    # на комментарий ответили с телефона: из списка он уходит
+    threads_pub.conversation(None, "100").append({"id": "205", "username": "istoriia", "replied_to": {"id": "200"}})
+    comments.check(acc)
+    assert [c["id"] for c in comments.pending(acc)["items"]] == ["201"]
 
 
 def test_send_and_skip(acc, monkeypatch):

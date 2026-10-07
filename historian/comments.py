@@ -60,13 +60,14 @@ def is_stale(acc, now: datetime | None = None) -> bool:
     return not checked or now - datetime.fromisoformat(checked) >= timedelta(minutes=CHECK_MINUTES)
 
 
-def fetch_new(acc, known: set[str], today: date | None = None) -> list[dict]:
-    """Комментарии под свежими постами, на которые аккаунт ещё не ответил и которых нет в known."""
+def fetch_new(acc, known: set[str], today: date | None = None) -> tuple[list[dict], set[str]]:
+    """Комментарии под свежими постами, на которые аккаунт ещё не ответил и которых нет в known,
+    и id всех комментариев, на которые аккаунт уже ответил (в том числе с телефона)."""
     from .publishers import threads as threads_pub
 
     creds, me = acc.creds(), (acc.threads_username or "").lower()
     since = ((today or date.today()) - timedelta(days=DAYS)).isoformat()
-    found = []
+    found, all_answered = [], set()
     for entry in acc.history():
         post_id = (entry.get("posted") or {}).get("threads")
         if not post_id or entry.get("date", "") < since:
@@ -74,6 +75,7 @@ def fetch_new(acc, known: set[str], today: date | None = None) -> list[dict]:
         replies = threads_pub.conversation(creds, post_id)
         ours = [r for r in replies if (r.get("username") or "").lower() == me]
         answered = {(r.get("replied_to") or {}).get("id") for r in ours}
+        all_answered |= answered
         for r in replies:
             if (r.get("username") or "").lower() == me or r["id"] in known or r["id"] in answered:
                 continue
@@ -83,7 +85,7 @@ def fetch_new(acc, known: set[str], today: date | None = None) -> list[dict]:
                           "topic": entry.get("topic", ""), "link": (entry.get("posted") or {}).get("link"),
                           "username": r.get("username", ""), "text": r.get("text", ""),
                           "timestamp": r.get("timestamp", ""), "status": "new", "draft": ""})
-    return found
+    return found, all_answered
 
 
 def draft_replies(acc, new: list[dict]) -> None:
@@ -116,18 +118,20 @@ def check(acc, now: datetime | None = None) -> dict:
     now = now or datetime.now()
     data = load(acc)
     data.update(checked=now.isoformat(timespec="seconds"), error="")
+    new, answered = [], set()
     try:
-        new = fetch_new(acc, {c["id"] for c in data["items"]}, now.date())
+        new, answered = fetch_new(acc, {c["id"] for c in data["items"]}, now.date())
     except threads_pub.NoPermission:
         data["error"] = NO_PERMISSION
-        new = []
     except Exception as e:
         data["error"] = f"Не удалось проверить комментарии: {e}"
-        new = []
     if new:
         draft_replies(acc, new)
     # перечитываем перед записью: пока ИИ писал, человек мог ответить на другой комментарий
     fresh = load(acc)
+    for c in fresh.get("items", []):
+        if c["status"] == "new" and c["id"] in answered:
+            c["status"] = "answered"  # ответили не через бота, например с телефона
     data["items"] = fresh.get("items", []) + new
     save(acc, data)
     return data

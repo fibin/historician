@@ -59,7 +59,7 @@ def test_make_builds_vertical_video(tmp_path, monkeypatch):
 
     def speak(text, voice, path):
         n = len(text.split())
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono",
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
                         "-t", str(0.4 * n + 0.2), path], check=True)
         return [(0.1 + i * 0.4, 0.45 + i * 0.4, w) for i, w in enumerate(text.split())]
     monkeypatch.setattr(video, "speak", speak)

@@ -1,5 +1,3 @@
-import pytest
-
 from historian import images, main
 from historian.publishers import threads as threads_pub
 

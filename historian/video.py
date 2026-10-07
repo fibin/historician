@@ -264,7 +264,7 @@ def _description(script: dict, pics: list[dict | None]) -> str:
             credits.append((img["page"], f"{who}{img['license']}: {img['page']}"))
     text = f"{script['title']}\n\n{script['description']}"
     if credits:
-        text += "\n\nИзображения: Wikimedia Commons\n" + "\n".join(c[1] for c in credits)
+        text += "\n\n🖼 Wikimedia Commons\n" + "\n".join(c[1] for c in credits)
     return text
 
 
