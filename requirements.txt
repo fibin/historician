@@ -1,2 +1,3 @@
 anthropic>=1.11
 requests>=2.32
+edge-tts>=7.2

@@ -10,7 +10,7 @@ main{max-width:760px;margin:0 auto;padding:28px 16px 60px}
 h1{font:600 26px/1.2 Georgia,"Times New Roman",serif;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 20px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
 h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;display:flex;justify-content:space-between;gap:10px}
-h2 .saved{text-transform:none;letter-spacing:0;font-weight:500}
+h2 .saved,h2 .status{text-transform:none;letter-spacing:0;font-weight:500}
 label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
 input,textarea,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
 textarea{min-height:110px;resize:vertical}textarea.theme{min-height:96px}
@@ -45,6 +45,27 @@ code{font:13px ui-monospace,Consolas,monospace;background:var(--bg);border:1px s
 .plan{margin:0 0 4px;padding:0;list-style:none}.plan li{padding:6px 0;border-bottom:1px solid var(--line)}.plan li:last-child{border:none}
 .plan .t{color:var(--muted)}
 hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
+.followers{font:600 19px/1.3 Georgia,serif}.followers small{font:500 14px system-ui,sans-serif;color:var(--muted);margin-left:6px}
+.followers small.up{color:var(--good)}
+table.stats{width:100%;border-collapse:collapse;font-size:14px;margin-top:12px}
+table.stats th{font-weight:500;color:var(--muted);font-size:12px;text-align:right;padding:0 0 6px 10px;white-space:nowrap}
+table.stats th:first-child,table.stats td:first-child{text-align:left;padding-left:0}
+table.stats td{border-top:1px solid var(--line);padding:7px 0 7px 10px;text-align:right;font-variant-numeric:tabular-nums;vertical-align:top}
+table.stats td:first-child{width:100%}table.stats td .t{color:var(--muted);font-size:12px;display:block}
+table.stats tr.top td:first-child a{font-weight:600}
+.pic{display:flex;gap:14px;align-items:flex-start;margin:0 0 14px}
+.pic img{width:150px;max-height:190px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.pic .cap{font-size:13px;color:var(--muted);flex:1;min-width:0}.pic .cap b{color:var(--ink);font-weight:500;display:block;overflow-wrap:anywhere}
+.pic .row{margin-top:8px}.pic button{font-size:13px;padding:6px 11px}
+.vidbox{border-top:1px solid var(--line);margin-top:18px;padding-top:14px}
+.vid{display:flex;gap:14px;align-items:flex-start}.vid video{width:170px;aspect-ratio:9/16;border-radius:8px;background:#000;flex:none}
+.vid .cap{flex:1;min-width:0;font-size:13px;color:var(--muted)}.vid .cap b{display:block;color:var(--ink);font-size:15px;font-weight:600;margin-bottom:2px}
+.vid textarea{min-height:120px;font-size:13px;margin-top:8px}.vid button{font-size:13px;padding:6px 11px}
+.com{border-top:1px solid var(--line);padding:12px 0 4px}.com:first-child{border-top:none;padding-top:0}
+.com .who{font-size:13px;color:var(--muted)}.com .who b{color:var(--ink);font-weight:600}
+.com .txt{margin:4px 0 8px;white-space:pre-wrap;overflow-wrap:anywhere}.com textarea{min-height:64px}
+.com .row{margin-top:8px}.com button{font-size:13px;padding:7px 13px}
+@media (max-width:560px){.vid{flex-direction:column}.vid video{width:100%;max-width:260px}}
 </style></head><body><main>
 <h1>Historian</h1><p class="sub">Генерация и публикация постов в Threads</p>
 
@@ -58,7 +79,9 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 <li><b>Получите токен Threads</b> (для каждого аккаунта Threads свой):
 <ul>
 <li>Откройте <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → <b>Create App</b> → сценарий <b>Access the Threads API</b> → создайте приложение. Одно приложение подходит для всех ваших аккаунтов.</li>
-<li><b>Use cases</b> → <b>Access the Threads API</b> → <b>Customize</b> → <b>Permissions</b>: должны быть <code>threads_basic</code> и <code>threads_content_publish</code>.</li>
+<li><b>Use cases</b> → <b>Access the Threads API</b> → <b>Customize</b> → <b>Permissions</b>: добавьте <code>threads_basic</code>, <code>threads_content_publish</code>,
+<code>threads_manage_insights</code> (статистика), <code>threads_read_replies</code> и <code>threads_manage_replies</code> (ответы на комментарии).
+Если разрешения добавлены после получения токена, получите токен заново: старый их не видит.</li>
 <li><b>App roles</b> → <b>Roles</b> → <b>Add People</b> → роль именно <b>Threads Tester</b> (не Instagram Tester) → впишите имя аккаунта Threads. Второй аккаунт добавьте так же.</li>
 <li>Примите приглашение, войдя в этот аккаунт: <a href="https://www.threads.net" target="_blank" rel="noopener">threads.net</a> → Настройки → Аккаунт → Разрешения для сайтов → Приглашения → Принять.</li>
 <li>Проверьте <b>App roles</b> → <b>Roles</b> → <b>Threads Testers</b>: у аккаунта не должно быть пометки <b>Pending</b>. Если она есть, приглашение не принято этим аккаунтом.</li>
@@ -68,6 +91,8 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 </ul></li>
 <li><b>Вставьте токен</b> в блок «Аккаунт Threads» и нажмите «Сохранить токен». ID определится сам, а продлевать токен бот будет сам.</li>
 <li>Нажмите <b>«Сгенерировать»</b>, прочитайте посты, при необходимости поправьте, затем <b>«Опубликовать»</b>.</li>
+<li><b>Видео для Shorts, TikTok и Reels</b> (по желанию): один раз установите FFmpeg. В PowerShell: <code>winget install Gyan.FFmpeg</code>,
+затем закройте и снова откройте Historian.bat. После этого у поста появится кнопка «Сделать видео». Фоновая музыка: положите mp3 в папку <code>music</code> рядом с Historian.bat.</li>
 <li><b>Каждый день сам</b> (по желанию): поставьте галочку «Публиковать каждый день сам», выберите время,
 а в блоке «Расписание» внизу нажмите «Включить расписание» (один раз на все аккаунты).</li>
 </ol>
@@ -79,6 +104,20 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 <section class="card"><h2>Пост дня</h2>
 <div class="row" style="margin-top:0"><button id="gen">Сгенерировать</button><span id="genMsg" class="status"></span></div>
 <div id="draft" style="margin-top:16px"></div>
+</section>
+
+<section class="card"><h2><span>Как заходят посты</span><span id="statsMsg" class="saved status"></span></h2>
+<div id="stats"></div>
+<div class="row"><button class="ghost" id="statsBtn">Обновить</button></div>
+<p class="hint">ИИ видит, какие посты аккаунта зашли лучше и хуже всего, и подстраивает выбор материала и подачу.
+Это включается, когда наберётся 4 поста старше двух дней. Цифры обновляются сами раз в 6 часов.</p>
+</section>
+
+<section class="card"><h2><span>Комментарии</span><span id="comMsg" class="saved status"></span></h2>
+<div id="coms"></div>
+<div class="row"><button class="ghost" id="comBtn">Проверить комментарии</button></div>
+<p class="hint">Бот находит новые комментарии под постами последних двух недель, ИИ предлагает ответ, а отправляете вы.
+Живые ответы автора растят аудиторию, а автоматические выглядят как бот.</p>
 </section>
 
 <section class="card"><h2><span>Настройки аккаунта</span><span id="setMsg" class="saved status"></span></h2>
@@ -94,6 +133,8 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 <div><label for="engine">ИИ для текстов</label><select id="engine"></select></div>
 </div>
 <div id="engineNote" class="engine-note"></div>
+<label style="margin-top:16px;color:var(--ink);font-size:15px"><input type="checkbox" id="withImg">Картинка к посту из Wikimedia Commons</label>
+<p class="hint">Архивные фото, картины, карты со свободной лицензией. Если лицензия просит указать автора, бот добавит подпись в конец цепочки.</p>
 <label style="margin-top:16px;color:var(--ink);font-size:15px"><input type="checkbox" id="auto">Публиковать каждый день сам в <input type="time" id="time" style="margin-left:6px"></label>
 <p class="hint" id="autoHint"></p>
 <hr>
@@ -118,7 +159,10 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
 </main>
 <script>
 const $ = id => document.getElementById(id);
-let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '', focusTheme = false;
+let pic = null;  // номер выбранной картинки в черновике или null
+let lastVid = '', lastComs = '';
+const comEdits = {};  // правки в черновиках ответов, чтобы опрос сервера их не затирал
+let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '', lastStats = '', focusTheme = false;
 try { cur = localStorage.getItem('historian.account'); } catch(e) {}
 
 // Счётчик изменений: ответ опроса, начатого до того, как изменение дошло до сервера, устарел и не применяется.
@@ -172,7 +216,7 @@ function renderAccount(){
   const a = st.account;
   $('name').value = a.name; $('theme').value = a.theme; $('lang').value = a.language;
   $('engine').innerHTML = st.engines.map(e => `<option value="${e.id}" ${e.id === a.engine ? 'selected' : ''}>${esc(e.label)}${e.available ? '' : ' (не установлен)'}</option>`).join('');
-  $('auto').checked = a.auto_publish; $('time').value = a.post_time;
+  $('auto').checked = a.auto_publish; $('time').value = a.post_time; $('withImg').checked = a.with_image;
   engineNote(); autoHint(); say($('setMsg'), '');
   $('uid').value = a.threads_user_id; $('tok').value = ''; say($('saveMsg'), '');
   renderToken();
@@ -211,6 +255,7 @@ $('theme').onchange = e => saveField('theme', e.target.value);
 $('lang').onchange = e => saveField('language', e.target.value);
 $('engine').onchange = e => saveField('engine', e.target.value);
 $('auto').onchange = e => saveField('auto_publish', e.target.checked);
+$('withImg').onchange = e => saveField('with_image', e.target.checked);
 $('time').onchange = e => { if(e.target.value) saveField('post_time', e.target.value); };
 
 function renderDraft(){
@@ -219,18 +264,69 @@ function renderDraft(){
   if(j.published){  // опубликованный пост: только заголовок и ссылка, без списка частей
     d.innerHTML = `<div class="done"><span class="badge">✓ Опубликовано${j.published_on ? ' ' + ddmmyyyy(j.published_on) : ''}</span>
       <p class="subject">${esc(s.subject || s.person || '')}</p><p class="topic">${esc(s.topic)}</p>
-      ${j.link ? `<a class="open" href="${esc(j.link)}" target="_blank" rel="noopener">${j.link_kind === 'profile' ? 'Открыть профиль в Threads' : 'Открыть пост в Threads'} →</a>` : ''}</div>`;
+      ${j.link ? `<a class="open" href="${esc(j.link)}" target="_blank" rel="noopener">${j.link_kind === 'profile' ? 'Открыть профиль в Threads' : 'Открыть пост в Threads'} →</a>` : ''}</div>
+      <div class="vidbox" id="vid"></div>`;
+    lastVid = ''; renderVideo();
     return;
   }
   const eng = st.engines.find(e => e.id === s.engine);
   d.innerHTML = `<p class="subject">${esc(s.subject || s.person || '')}</p><p class="topic">${esc(s.topic)}${eng ? ' · ' + esc(eng.label) : ''}</p>
+    <div id="pic"></div>
     <div id="posts"></div>
     <button class="ghost" id="add">+ Добавить пост</button>
     <div class="sources" style="margin-top:14px">${(s.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('')}</div>
-    <div class="row"><button id="pub">Опубликовать</button><span id="pubMsg" class="status"></span></div>`;
+    <div class="row"><button id="pub">Опубликовать</button><span id="pubMsg" class="status"></span></div>
+    <div class="vidbox" id="vid"></div>`;
+  lastVid = ''; renderVideo();
+  pic = s.image ?? null; renderPic();
   s.threads_posts.forEach(addPost);
   $('add').onclick = () => { addPost(''); editing = true; };
   $('pub').onclick = publish;
+}
+function renderPic(){
+  const opts = st.job.story.images || [], img = pic === null ? null : opts[pic];
+  if(!opts.length){ $('pic').innerHTML = ''; return; }
+  $('pic').innerHTML = img
+    ? `<div class="pic"><a href="${esc(img.page)}" target="_blank" rel="noopener"><img src="${esc(img.preview)}" alt=""></a>
+       <div class="cap"><b>${esc(img.title)}</b>${esc([img.author, img.license].filter(Boolean).join(' · '))}
+       ${img.attribution ? '<br>Подпись с автором добавится в конец цепочки.' : ''}
+       <div class="row">${opts.length > 1 ? `<button class="ghost" id="picNext">Другая (${pic + 1} из ${opts.length})</button>` : ''}<button class="ghost" id="picOff">Без картинки</button></div></div></div>`
+    : `<div class="row" style="margin:0 0 14px"><button class="ghost" id="picOn">+ Картинка</button><span class="status">Пост выйдет без картинки</span></div>`;
+  if($('picNext')) $('picNext').onclick = () => { pic = (pic + 1) % opts.length; editing = true; renderPic(); };
+  if($('picOff')) $('picOff').onclick = () => { pic = null; editing = true; renderPic(); };
+  if($('picOn')) $('picOn').onclick = () => { pic = 0; editing = true; renderPic(); };
+}
+function renderVideo(){
+  const box = $('vid'); if(!box) return;
+  const j = st.job, v = j.video, busy = j.status === 'video';
+  const failed = j.status === 'error' && j.action === 'video' ? j.message : '';
+  if(busy && $('vidTime')){ $('vidTime').textContent = `${j.stage || 'Готовлю'}… ${mmss(j.elapsed)}`; }
+  const key = JSON.stringify([v && v.mtime, busy, failed, j.status === 'generating' || j.status === 'publishing']);
+  if(key === lastVid) return; lastVid = key;
+  let html = '';
+  if(busy) html = `<p class="status"><span class="spin"></span><span id="vidTime">${esc(j.stage || 'Готовлю')}… ${mmss(j.elapsed)}</span></p>
+    <p class="hint">Сценарий, озвучка, кадры и сборка занимают несколько минут.</p>`;
+  else if(v) html = `<div class="vid"><video controls preload="metadata" src="/api/video-file?account=${encodeURIComponent(st.account.id)}&name=${encodeURIComponent(v.name)}&t=${v.mtime}"></video>
+    <div class="cap"><b>${esc(v.title)}</b>${v.seconds} сек · голос ${esc(v.voice)}
+    <textarea readonly id="vidDesc"></textarea>
+    <div class="row"><button class="ghost" id="vidCopy">Скопировать описание</button>${st.schedule.supported ? '<button class="ghost" id="vidOpen">Показать в папке</button>' : ''}<button class="ghost" id="vidMake">Сделать заново</button></div>
+    <p class="hint">Загрузите в Shorts, TikTok и Reels. При загрузке отметьте, что в видео синтезированный голос (пункт про ИИ-контент).</p></div></div>`;
+  else html = `<div class="row" style="margin-top:0"><button class="ghost" id="vidMake">Сделать видео</button><span class="status">Вертикальное видео на 35–50 секунд для Shorts, TikTok и Reels</span></div>`;
+  if(failed) html += `<p class="status err">${esc(failed)}</p>`;
+  box.innerHTML = html;
+  if($('vidDesc')) $('vidDesc').value = v.description;
+  if($('vidMake')){
+    $('vidMake').disabled = j.status === 'generating' || j.status === 'publishing';
+    $('vidMake').onclick = async () => {
+      try { await api('/api/video', {id: st.account.id}); lastVid = ''; await refresh(); }
+      catch(e){ box.insertAdjacentHTML('beforeend', `<p class="status err">${esc(e.message)}</p>`); }
+    };
+  }
+  if($('vidCopy')) $('vidCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(v.description); } catch(e) { $('vidDesc').select(); document.execCommand('copy'); }
+    $('vidCopy').textContent = 'Скопировано';
+  };
+  if($('vidOpen')) $('vidOpen').onclick = () => api('/api/video/open', {id: st.account.id}).catch(e => alert(e.message));
 }
 function addPost(text){
   const wrap = document.createElement('div'); wrap.className = 'post';
@@ -243,7 +339,7 @@ function addPost(text){
   $('posts').appendChild(wrap);
 }
 function renderStatus(){
-  const j = st.job, busy = j.status === 'generating' || j.status === 'publishing';
+  const j = st.job, busy = ['generating', 'publishing', 'video'].includes(j.status);
   const noTheme = !st.account.theme.trim();
   $('gen').disabled = busy || noTheme;
   if($('pub')) $('pub').disabled = busy || !st.account.has_token;
@@ -252,7 +348,7 @@ function renderStatus(){
   if(j.status === 'generating') g.innerHTML = `<span class="spin"></span>Ищу материал и пишу посты… ${mmss(j.elapsed)}`;
   else if(noTheme && !busy) say(g, 'Сначала опишите в настройках ниже, о чём аккаунт.');
   else if(j.status === 'publishing' && p) p.innerHTML = `<span class="spin"></span>Публикую…`;
-  else if(j.status === 'error') say((p && j.story) ? p : g, j.message, 'err');
+  else if(j.status === 'error' && j.action !== 'video') say((p && j.story) ? p : g, j.message, 'err');
   else if(p && !st.account.has_token) say(p, 'Чтобы публиковать, сохраните токен Threads ниже.');
 }
 
@@ -278,6 +374,72 @@ function renderSchedule(){
   $('sched').textContent = sc.status === 'daily' ? 'Обновить расписание' : 'Включить расписание';
 }
 
+function num(n){return n == null ? '–' : n >= 10000 ? (n/1000).toFixed(n >= 100000 ? 0 : 1).replace('.0', '') + 'K' : String(n)}
+function renderStats(){
+  const s = st.stats, a = st.account;
+  const key = JSON.stringify([a.id, a.has_token, s]);
+  if(key === lastStats) return; lastStats = key;
+  $('statsBtn').disabled = !a.has_token || s.loading;
+  if(s.loading) $('statsMsg').innerHTML = '<span class="spin"></span>Обновляю';
+  else say($('statsMsg'), s.checked ? 'обновлено ' + ddmmyyyy(s.checked.slice(0, 10)) + ' ' + s.checked.slice(11, 16) : '');
+  if(!a.has_token){ $('stats').innerHTML = '<p class="status">Статистика появится, когда вы сохраните токен Threads.</p>'; return; }
+  let html = '';
+  if(s.followers != null){
+    const w = s.week;
+    html += `<div class="followers">${num(s.followers)} подписчиков${w != null ? `<small class="${w > 0 ? 'up' : ''}">${w > 0 ? '+' : ''}${w} за неделю</small>` : ''}</div>`;
+  }
+  if(s.error) html += `<p class="status err">${esc(s.error)}</p>`;
+  const rated = s.posts.filter(p => p.stats);
+  const best = rated.length > 1 ? Math.max(...rated.map(p => p.stats.views || 0)) : 0;
+  if(!s.posts.length) html += '<p class="status">Здесь появятся цифры опубликованных постов.</p>';
+  else html += `<table class="stats"><tr><th>Пост</th><th title="Просмотры">👁</th><th title="Лайки">♥</th><th title="Ответы">💬</th><th title="Репосты, цитаты, пересылки">↻</th></tr>`
+    + s.posts.map(p => { const x = p.stats;
+      const title = p.link ? `<a href="${esc(p.link)}" target="_blank" rel="noopener">${esc(p.subject)}</a>` : esc(p.subject);
+      return `<tr class="${x && best > 0 && x.views === best ? 'top' : ''}"><td>${title}<span class="t">${p.date ? ddmmyyyy(p.date) + ' · ' : ''}${esc(p.topic)}</span></td>`
+        + (x ? `<td>${num(x.views)}</td><td>${num(x.likes)}</td><td>${num(x.replies)}</td><td>${num((x.reposts||0) + (x.quotes||0) + (x.shares||0))}</td>`
+             : '<td>–</td><td>–</td><td>–</td><td>–</td>') + '</tr>'; }).join('') + '</table>';
+  $('stats').innerHTML = html;
+}
+function renderComments(){
+  const c = st.comments, a = st.account;
+  const key = JSON.stringify([a.id, a.has_token, c.loading, c.error, c.checked, c.items.map(i => [i.id, i.draft])]);
+  if(key === lastComs) return; lastComs = key;
+  $('comBtn').disabled = !a.has_token || c.loading;
+  if(c.loading) $('comMsg').innerHTML = '<span class="spin"></span>Проверяю';
+  else say($('comMsg'), c.checked ? 'проверено ' + c.checked.slice(11, 16) : '');
+  if(!a.has_token){ $('coms').innerHTML = '<p class="status">Комментарии появятся, когда вы сохраните токен Threads.</p>'; return; }
+  let html = c.error ? `<p class="status err">${esc(c.error)}</p>` : '';
+  if(!c.items.length && !c.error) html += `<p class="status">${c.checked ? 'Новых комментариев нет.' : 'Ещё не проверяли.'}</p>`;
+  html += c.items.map(i => `<div class="com" data-id="${esc(i.id)}">
+    <div class="who"><b>@${esc(i.username)}</b> · к посту ${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener">${esc(i.subject)}</a>` : esc(i.subject)}${i.timestamp ? ' · ' + ddmmyyyy(i.timestamp.slice(0, 10)) : ''}</div>
+    <p class="txt">${esc(i.text)}</p>
+    <textarea placeholder="${i.suggest_skip ? 'ИИ считает, что отвечать не нужно. Можно написать самому.' : 'Ваш ответ'}"></textarea>
+    <div class="row"><button class="send">Ответить</button><button class="ghost skip">Пропустить</button><span class="status"></span></div></div>`).join('');
+  $('coms').innerHTML = html;
+  $('coms').querySelectorAll('.com').forEach(box => {
+    const id = box.dataset.id, item = c.items.find(i => i.id === id), ta = box.querySelector('textarea'), msg = box.querySelector('.status');
+    ta.value = comEdits[id] ?? item.draft; ta.oninput = () => { comEdits[id] = ta.value; };
+    const done = text => { box.innerHTML = `<p class="status ok">${text}</p>`; delete comEdits[id]; };
+    box.querySelector('.send').onclick = async e => {
+      e.target.disabled = true; say(msg, 'Отправляю…');
+      try { await api('/api/comments/send', {id: a.id, comment: id, text: ta.value}); done('✓ Ответ отправлен'); }
+      catch(err){ say(msg, err.message, 'err'); e.target.disabled = false; }
+    };
+    box.querySelector('.skip').onclick = async () => {
+      try { await api('/api/comments/skip', {id: a.id, comment: id}); done('Пропущено'); }
+      catch(err){ say(msg, err.message, 'err'); }
+    };
+  });
+}
+$('comBtn').onclick = async () => {
+  try { await api('/api/comments/check', {id: st.account.id}); lastComs = ''; await refresh(); }
+  catch(e){ say($('comMsg'), e.message, 'err'); }
+};
+$('statsBtn').onclick = async () => {
+  try { await api('/api/stats', {id: st.account.id}); lastStats = ''; await refresh(); }
+  catch(e){ say($('statsMsg'), e.message, 'err'); }
+};
+
 async function refresh(){
   const want = cur, seen = changes;
   let s;
@@ -286,17 +448,18 @@ async function refresh(){
   // пока ждали ответ, переключились на другой аккаунт или что-то сохранили: ответ устарел
   if(want !== cur || seen !== changes) return;
   const prev = st; st = s; limit = st.limit; cur = st.account.id;
-  renderTabs(); renderSchedule();
+  renderTabs(); renderSchedule(); renderStats(); renderComments();
   if(shownAcc !== st.account.id){ shownAcc = st.account.id; renderAccount(); renderDraft(); renderStatus(); return; }
   syncToken(prev.account);
   const view = j => JSON.stringify([j.story, j.published, j.published_on, j.link]);
   const changed = !prev || view(prev.job) !== view(st.job);
   if(changed && !editing) renderDraft();
+  else renderVideo();
   renderStatus();
 }
 async function publish(){
   const posts = [...document.querySelectorAll('#posts textarea')].map(t => t.value);
-  try { await api('/api/publish', {id: st.account.id, posts, draft: st.job.draft}); editing = false; await refresh(); }
+  try { await api('/api/publish', {id: st.account.id, posts, draft: st.job.draft, image: pic}); editing = false; await refresh(); }
   catch(e){ say($('pubMsg'), e.message, 'err'); }
 }
 $('gen').onclick = async () => {

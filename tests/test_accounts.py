@@ -88,14 +88,14 @@ def scheduled(monkeypatch):
     manual.save()
     log = {"generated": [], "posted": []}
 
-    def generate(engine, entries, theme, language):
+    def generate(engine, entries, theme, language, with_image=True):
         log["generated"].append((engine, theme, language))
         if log.get("fail"):
             raise RuntimeError("лимит подписки")
         return dict(STORY)
 
     monkeypatch.setattr(main, "generate", generate)
-    monkeypatch.setattr(threads_pub, "post_thread", lambda creds, parts: log["posted"].append(creds.user_id) or ["99"])
+    monkeypatch.setattr(threads_pub, "post_thread", lambda creds, parts, image_url=None: log["posted"].append(creds.user_id) or ["99"])
     monkeypatch.setattr(threads_pub, "refresh_token", lambda t: pytest.fail("токен свежий"))
     return auto, log
 

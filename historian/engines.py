@@ -70,8 +70,8 @@ def _find(binary: str, required: bool = True) -> str | None:
     return exe
 
 
-def _user_prompt(history_summary: str) -> str:
-    return research.user_prompt(history_summary) + "\n\nКогда досье готово, напиши посты."
+def _user_prompt(history_summary: str, feedback: str = "") -> str:
+    return research.user_prompt(history_summary, feedback) + "\n\nКогда досье готово, напиши посты."
 
 
 def _run(cmd: list[str], stdin: str, timeout: int) -> str:
@@ -97,52 +97,56 @@ def _parse_json_reply(text: str) -> dict:
         raise RuntimeError(f"Модель вернула не JSON: {text[:500]}")
 
 
+OPTIONAL = {"image_queries"}  # без них пост просто выйдет без картинки
+
+
 def _validate(story: dict) -> dict:
-    missing = [k for k in SCHEMA["required"] if k not in story]
+    missing = [k for k in SCHEMA["required"] if k not in story and k not in OPTIONAL]
     if missing or not isinstance(story.get("threads_posts"), list) or not story["threads_posts"]:
         raise RuntimeError(f"В ответе модели нет полей: {', '.join(missing) or 'threads_posts'}")
     return story
 
 
-def _claude_code(system: str, history_summary: str, timeout: int) -> dict:
+def _claude_code(system: str, user: str, schema: dict, search: bool, timeout: int) -> dict:
+    tools = "WebSearch,WebFetch" if search else ""
     cmd = [
         _find("claude"), "-p",
         "--model", os.environ.get("HISTORIAN_CC_MODEL", "opus"),
-        "--tools", "WebSearch,WebFetch",
-        "--allowedTools", "WebSearch,WebFetch",
+        "--tools", tools,
+        *(["--allowedTools", tools] if search else []),
         "--system-prompt", system,
-        "--json-schema", json.dumps(SCHEMA, ensure_ascii=False),
+        "--json-schema", json.dumps(schema, ensure_ascii=False),
         "--output-format", "json",
     ]
-    result = json.loads(_run(cmd, _user_prompt(history_summary), timeout))
+    result = json.loads(_run(cmd, user, timeout))
     if result.get("is_error") or not result.get("structured_output"):
-        raise RuntimeError(f"claude не вернул посты: {result.get('result') or result}")
+        raise RuntimeError(f"claude не вернул ответ: {result.get('result') or result}")
     return result["structured_output"]
 
 
-def _codex(system: str, history_summary: str, timeout: int) -> dict:
+def _codex(system: str, user: str, schema: dict, search: bool, timeout: int) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         schema_path = os.path.join(tmp, "schema.json")
         out_path = os.path.join(tmp, "answer.json")
         with open(schema_path, "w", encoding="utf-8") as f:
-            json.dump(SCHEMA, f, ensure_ascii=False)
-        cmd = [_find("codex"), "--search", "exec",
+            json.dump(schema, f, ensure_ascii=False)
+        cmd = [_find("codex"), *(["--search"] if search else []), "exec",
                "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral",
                "--cd", tmp, "--output-schema", schema_path, "-o", out_path]
         model = os.environ.get("HISTORIAN_CODEX_MODEL")
         if model:
             cmd += ["-m", model]
-        _run(cmd + ["-"], system + "\n\n---\n\n" + _user_prompt(history_summary), timeout)
+        _run(cmd + ["-"], system + "\n\n---\n\n" + user, timeout)
         with open(out_path, encoding="utf-8") as f:
             return _parse_json_reply(f.read())
 
 
-def _gemini(system: str, history_summary: str, timeout: int) -> dict:
-    prompt = (system + "\n\n---\n\n" + _user_prompt(history_summary)
+def _gemini(system: str, user: str, schema: dict, search: bool, timeout: int) -> dict:
+    prompt = (system + "\n\n---\n\n" + user
               + "\n\nОтветь ТОЛЬКО JSON-объектом по этой схеме, без пояснений:\n"
-              + json.dumps(SCHEMA, ensure_ascii=False))
+              + json.dumps(schema, ensure_ascii=False))
     cmd = [_find("gemini"), "--output-format", "json", "--approval-mode", "plan",
-           "--allowed-tools=google_web_search,web_fetch",
+           *(["--allowed-tools=google_web_search,web_fetch"] if search else []),
            "-p", "Follow the instructions above."]
     model = os.environ.get("HISTORIAN_GEMINI_MODEL")
     if model:
@@ -153,10 +157,27 @@ def _gemini(system: str, history_summary: str, timeout: int) -> dict:
     return _parse_json_reply(result.get("response", ""))
 
 
-RUNNERS = {"claude-code": _claude_code, "codex": _codex, "gemini": _gemini}
+def _api(system: str, user: str, schema: dict, search: bool, timeout: int) -> dict:
+    import anthropic
+
+    from . import llm
+    tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 20}] if search else None
+    response = llm.run(anthropic.Anthropic(), system=system, user=user, tools=tools, effort="medium",
+                       output_config={"format": {"type": "json_schema", "schema": schema}}, max_tokens=16000)
+    return json.loads(llm.text_of(response))
 
 
-def generate_story(engine: str, history_summary: str, theme: str, language: str, timeout: int = 1800) -> dict:
-    story = _validate(RUNNERS[engine](system_prompt(theme, language), history_summary, timeout))
+RUNNERS = {"claude-code": _claude_code, "codex": _codex, "gemini": _gemini, "api": _api}
+
+
+def ask(engine: str, system: str, user: str, schema: dict, search: bool = False, timeout: int = 900) -> dict:
+    """Один запрос к выбранному ИИ с ответом строго по схеме. search — разрешить поиск в интернете."""
+    return RUNNERS[engine](system, user, schema, search, timeout)
+
+
+def generate_story(engine: str, history_summary: str, theme: str, language: str, feedback: str = "",
+                   timeout: int = 1800) -> dict:
+    story = _validate(ask(engine, system_prompt(theme, language), _user_prompt(history_summary, feedback),
+                          SCHEMA, search=True, timeout=timeout))
     story["engine"] = engine
     return story

@@ -14,7 +14,7 @@ import sys
 import traceback
 from datetime import date, datetime
 
-from . import accounts, history, research, writer
+from . import accounts, history, images, research, stats, writer
 from .config import LANGUAGE, THREADS_LIMIT, ThreadsCredentials, env_flag
 from .textfit import fit, plain_length
 
@@ -35,7 +35,15 @@ def fit_story(story: dict) -> dict:
     return story
 
 
-def generate(engine: str, entries: list[dict], theme: str, language: str = LANGUAGE) -> dict:
+def add_images(story: dict) -> dict:
+    """Варианты картинки с Wikimedia Commons; первая выбрана, в окне можно сменить или убрать."""
+    story["images"] = images.find(story.get("image_queries") or [])
+    story["image"] = 0 if story["images"] else None
+    return story
+
+
+def generate(engine: str, entries: list[dict], theme: str, language: str = LANGUAGE,
+             with_image: bool = True) -> dict:
     """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу."""
     if not theme.strip():
         raise SystemExit("Опишите в настройках аккаунта, о чём он: без темы ИИ не знает, что искать")
@@ -45,24 +53,27 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
         client = anthropic.Anthropic()
     used = history.used_subjects(entries)
     summary = history.summary_for_prompt(entries)
+    feedback = stats.feedback_for_prompt(entries)
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if engine != "api":
             from . import engines
-            story = engines.generate_story(engine, summary, theme, language)
+            story = engines.generate_story(engine, summary, theme, language, feedback)
         else:
-            dossier, urls = research.find_story(client, summary, theme)
-            story = writer.write_posts(client, dossier, urls, theme, language)
+            dossier, urls = research.find_story(client, summary, theme, feedback)
+            story = writer.write_posts(client, dossier, urls, theme, language, feedback)
             story["dossier"] = dossier
             story["engine"] = "api"
         if history.key(story) in used:
             print(f"[{attempt}] «{history.subject_of(story)}» уже был недавно, ищу другой материал", file=sys.stderr)
             continue
-        return fit_story(story)
+        story = fit_story(story)
+        return add_images(story) if with_image else story
     raise RuntimeError("Не удалось найти новый материал: ИИ трижды предложил то, что уже было")
 
 
 def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
-    return generate(engine or acc.engine, acc.history(), acc.theme, acc.language)
+    stats.refresh(acc)  # свежие цифры, чтобы ИИ видел, что заходит
+    return generate(engine or acc.engine, acc.history(), acc.theme, acc.language, acc.with_image)
 
 
 def publish(story: dict, creds: ThreadsCredentials | None) -> dict:
@@ -70,8 +81,16 @@ def publish(story: dict, creds: ThreadsCredentials | None) -> dict:
 
     if not creds:
         raise SystemExit("У этого аккаунта нет ID и токена Threads")
-    ids = threads_pub.post_thread(creds, story["threads_posts"])
-    return {"threads": ids[0]}
+    img = images.chosen(story)
+    posts = list(story["threads_posts"])
+    if img and images.credit(img):
+        posts[-1] = posts[-1].rstrip() + "\n\n" + images.credit(img)
+        posts = fit(posts, THREADS_LIMIT, plain_length)
+    ids = threads_pub.post_thread(creds, posts, image_url=img and img["url"])
+    posted = {"threads": ids[0]}
+    if img:
+        posted["image"] = img["page"]
+    return posted
 
 
 def check_not_recent(story: dict, entries: list[dict]) -> None:
@@ -128,6 +147,7 @@ def run_due(now: datetime | None = None) -> None:
     now = now or datetime.now()
     for acc in accounts.ensure():
         accounts.refresh_token_if_needed(acc, now.date())
+        stats.refresh(acc, now)
         if not is_due(acc, now):
             continue
         accounts.note_attempt(acc, now.date())
