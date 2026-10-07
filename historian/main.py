@@ -1,21 +1,25 @@
-"""Ежедневный запуск: найти историю → написать посты → (по флагу) опубликовать.
+"""Запуск из консоли и по расписанию.
 
-    python -m historian.main                 # черновик в out/, ничего не публикует
-    python -m historian.main --publish       # найти и опубликовать
-    python -m historian.main --from-draft out/2026-10-07.json --publish   # опубликовать готовый черновик
-    python -m historian.main --refresh-threads-token
+    python -m historian.main                          # черновик для первого аккаунта, ничего не публикует
+    python -m historian.main --account nauka          # черновик для аккаунта nauka (папка в accounts/)
+    python -m historian.main --publish                # найти и опубликовать
+    python -m historian.main --from-draft accounts/main/out/2026-10-07_100000.json --publish
+    python -m historian.main --due                    # для планировщика: публикует там, где пришло время
+    python -m historian.main --refresh-threads-token  # продлить токены Threads всех аккаунтов
 """
 import argparse
 import json
 import os
 import sys
-from datetime import date
+import traceback
+from datetime import date, datetime
 
-from . import history, research, writer
-from .config import HISTORY_PATH, THREADS_LIMIT, ThreadsCredentials, env_flag
+from . import accounts, history, research, writer
+from .config import LANGUAGE, THREADS_LIMIT, ThreadsCredentials, env_flag
 from .textfit import fit, plain_length
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 3        # сколько раз искать другую историю, если человек уже был
+MAX_DAILY_ATTEMPTS = 2  # сколько раз в день планировщик пробует опубликовать, если что-то сломалось
 
 
 def fit_story(story: dict) -> dict:
@@ -23,7 +27,8 @@ def fit_story(story: dict) -> dict:
     return story
 
 
-def generate(engine: str, entries: list[dict]) -> dict:
+def generate(engine: str, entries: list[dict], theme: str = accounts.DEFAULT_THEME,
+             language: str = LANGUAGE) -> dict:
     """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу."""
     client = None
     if engine == "api":
@@ -34,10 +39,10 @@ def generate(engine: str, entries: list[dict]) -> dict:
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if engine != "api":
             from . import engines
-            story = engines.generate_story(engine, summary)
+            story = engines.generate_story(engine, summary, theme, language)
         else:
-            dossier, urls = research.find_story(client, summary)
-            story = writer.write_posts(client, dossier, urls)
+            dossier, urls = research.find_story(client, summary, theme)
+            story = writer.write_posts(client, dossier, urls, language)
             story["dossier"] = dossier
             story["engine"] = "api"
         if story["person"].strip().lower() in used:
@@ -47,12 +52,15 @@ def generate(engine: str, entries: list[dict]) -> dict:
     raise RuntimeError("Не удалось найти новую историю")
 
 
-def publish(story: dict) -> dict:
+def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
+    return generate(engine or acc.engine, acc.history(), acc.theme, acc.language)
+
+
+def publish(story: dict, creds: ThreadsCredentials | None) -> dict:
     from .publishers import threads as threads_pub
 
-    creds = ThreadsCredentials.from_env()
     if not creds:
-        raise SystemExit("Нет ключей Threads (THREADS_USER_ID, THREADS_ACCESS_TOKEN)")
+        raise SystemExit("У этого аккаунта нет ID и токена Threads")
     ids = threads_pub.post_thread(creds, story["threads_posts"])
     return {"threads": ids[0]}
 
@@ -62,18 +70,19 @@ def check_not_recent(story: dict, entries: list[dict]) -> None:
         raise SystemExit(f"{story['person']} уже был недавно, нужна другая история")
 
 
-def save_draft(story: dict, out_dir: str = "out") -> str:
+def save_draft(story: dict, out_dir: str, path: str | None = None) -> str:
+    """Новый черновик получает имя по дате и времени, существующий (path) перезаписывается."""
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"{date.today().isoformat()}.json")
+    path = path or os.path.join(out_dir, f"{datetime.now():%Y-%m-%d_%H%M%S}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(story, f, ensure_ascii=False, indent=2)
     return path
 
 
-def publish_and_record(story: dict) -> dict:
-    """Публикует и записывает в журнал. Журнал перечитывается, чтобы не затереть чужие записи."""
-    posted = publish(story)
-    history.save(HISTORY_PATH, history.add(history.load(HISTORY_PATH), story, posted))
+def publish_and_record(acc: accounts.Account, story: dict) -> dict:
+    """Публикует и записывает в журнал аккаунта. Журнал перечитывается, чтобы не затереть чужие записи."""
+    posted = publish(story, acc.creds())
+    history.save(acc.history_path, history.add(acc.history(), story, posted))
     return posted
 
 
@@ -84,30 +93,75 @@ def print_preview(story: dict) -> None:
     print("Источники:", *story["sources"], sep="\n  ")
 
 
+def is_due(acc: accounts.Account, now: datetime) -> bool:
+    """Пора ли публиковать: включена автопубликация, время прошло, сегодня в аккаунте ещё не было поста.
+    Если компьютер был выключен в нужный час, пост выйдет при первом запуске после включения."""
+    return (acc.auto_publish and acc.creds() is not None
+            and now.strftime("%H:%M") >= acc.post_time
+            and not accounts.posted_today(acc, now.date())
+            and accounts.attempts_today(acc, now.date()) < MAX_DAILY_ATTEMPTS)
+
+
+def run_due(now: datetime | None = None) -> None:
+    """Раз в час из планировщика Windows: продлевает токены и публикует там, где пришло время."""
+    now = now or datetime.now()
+    for acc in accounts.ensure():
+        accounts.refresh_token_if_needed(acc, now.date())
+        if not is_due(acc, now):
+            continue
+        accounts.note_attempt(acc, now.date())
+        print(f"{now:%Y-%m-%d %H:%M} [{acc.name}] ищу историю ({acc.engine})", flush=True)
+        try:
+            story = generate_for(acc)
+            draft = save_draft(story, acc.out_dir)
+            print(f"[{acc.name}] черновик: {draft}", flush=True)
+            posted = publish_and_record(acc, story)
+            print(f"[{acc.name}] опубликовано: {story['person']} — {story['topic']} {posted}", flush=True)
+        except (Exception, SystemExit) as e:  # один сломанный аккаунт не мешает остальным
+            print(f"[{acc.name}] ошибка: {e}", flush=True)
+            traceback.print_exc()
+
+
+def _log_to(log_dir: str) -> None:
+    """При запуске без окна (pythonw) пишем вывод в logs/<дата>.log."""
+    os.makedirs(log_dir, exist_ok=True)
+    log = open(os.path.join(log_dir, f"{date.today().isoformat()}.log"), "a", encoding="utf-8")
+    sys.stdout = sys.stderr = log
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--account", help="id аккаунта (папка в accounts/), по умолчанию первый")
     ap.add_argument("--publish", action="store_true", default=env_flag("HISTORIAN_PUBLISH"))
     ap.add_argument("--from-draft")
-    ap.add_argument("--out-dir", default="out")
+    ap.add_argument("--due", action="store_true", help="для планировщика: опубликовать там, где пришло время")
+    ap.add_argument("--log-dir", help="писать вывод в файл в этой папке")
     ap.add_argument("--refresh-threads-token", action="store_true")
     ap.add_argument("--engine", choices=["claude-code", "codex", "gemini", "api"],
-                    default=os.environ.get("HISTORIAN_ENGINE", "claude-code"),
-                    help="claude-code (по умолчанию), codex (ChatGPT), gemini — через подписку; api — через ключ Claude API")
+                    help="другой ИИ на этот запуск: claude-code, codex (ChatGPT), gemini — через подписку; "
+                         "api — через ключ Claude API. По умолчанию ИИ из настроек аккаунта")
     args = ap.parse_args(argv)
+    if args.log_dir:
+        _log_to(args.log_dir)
 
+    if args.due:
+        return run_due()
+
+    all_accounts = accounts.ensure()
     if args.refresh_threads_token:
-        from .publishers.threads import refresh_token
-        print(json.dumps(refresh_token(os.environ["THREADS_ACCESS_TOKEN"]), indent=2))
+        for a in all_accounts:
+            if accounts.refresh_token_if_needed(a, force=True):
+                print(f"[{a.name}] токен продлён до {a.token_expires}")
         return
 
-    entries = history.load(HISTORY_PATH)
+    acc = accounts.get(args.account) if args.account else all_accounts[0]
     if args.from_draft:
         with open(args.from_draft, encoding="utf-8") as f:
             story = fit_story(json.load(f))
-        check_not_recent(story, entries)
+        check_not_recent(story, acc.history())
     else:
-        story = generate(args.engine, entries)
-        draft = save_draft(story, args.out_dir)
+        story = generate_for(acc, args.engine)
+        draft = save_draft(story, acc.out_dir)
         print(f"Черновик сохранён: {draft}", file=sys.stderr)
 
     print_preview(story)
@@ -115,7 +169,7 @@ def main(argv=None) -> None:
         print("\nРежим черновика: ничего не опубликовано (добавьте --publish).", file=sys.stderr)
         return
 
-    posted = publish_and_record(story)
+    posted = publish_and_record(acc, story)
     print("Опубликовано:", json.dumps(posted, ensure_ascii=False), file=sys.stderr)
 
 

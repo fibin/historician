@@ -2,7 +2,7 @@
 
 claude-code, codex и gemini работают через консольные программы, вошедшие в вашу подписку
 (Claude, ChatGPT, аккаунт Google), поэтому ключ API не нужен. api — Claude API по ключу.
-Всем движкам дают одни и те же промпты (research.SYSTEM + writer.SYSTEM) и одну схему ответа.
+Всем движкам дают одни и те же промпты (research + writer, с темой и языком аккаунта) и одну схему ответа.
 """
 import json
 import os
@@ -19,12 +19,15 @@ SCHEMA = {
     "required": writer.SCHEMA["required"] + ["dossier"],
 }
 
-SYSTEM = (
-    research.SYSTEM
-    + "\n\n---\nКогда досье готово, сам напиши по нему посты.\n\n"
-    + writer.SYSTEM
-    + "\n\nВ поле dossier положи досье целиком (в формате выше)."
-)
+
+def system_prompt(theme: str, language: str) -> str:
+    return (
+        research.system_prompt(theme)
+        + "\n\n---\nКогда досье готово, сам напиши по нему посты.\n\n"
+        + writer.system_prompt(language)
+        + "\n\nВ поле dossier положи досье целиком (в формате выше)."
+    )
+
 
 # label — для окна, bin — консольная программа, setup — как установить и войти (для подсказки в окне).
 ENGINES = {
@@ -70,7 +73,7 @@ def _find(binary: str, required: bool = True) -> str | None:
 def _user_prompt(history_summary: str) -> str:
     return (
         "Найди сегодняшнюю историю и напиши посты.\n\n"
-        "Эти люди и сюжеты уже были, их не повторяй (людей из последних двух месяцев не бери вовсе):\n"
+        "Эти люди и сюжеты уже были в этом аккаунте, их не повторяй (людей из последних двух месяцев не бери вовсе):\n"
         f"{history_summary}"
     )
 
@@ -78,8 +81,10 @@ def _user_prompt(history_summary: str) -> str:
 def _run(cmd: list[str], stdin: str, timeout: int) -> str:
     # Длинный текст идёт через stdin, а в аргументах только короткие строки:
     # на Windows npm-программы запускаются через .cmd, и cmd.exe портит сложные аргументы.
+    # CREATE_NO_WINDOW: при запуске по расписанию (pythonw) не открывать окно консоли.
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=timeout)
+                          encoding="utf-8", errors="replace", timeout=timeout, creationflags=flags)
     if proc.returncode != 0:
         raise RuntimeError(f"{os.path.basename(cmd[0])} завершился с кодом {proc.returncode}: "
                            f"{(proc.stderr or proc.stdout)[-2000:]}")
@@ -103,13 +108,13 @@ def _validate(story: dict) -> dict:
     return story
 
 
-def _claude_code(history_summary: str, timeout: int) -> dict:
+def _claude_code(system: str, history_summary: str, timeout: int) -> dict:
     cmd = [
         _find("claude"), "-p",
         "--model", os.environ.get("HISTORIAN_CC_MODEL", "opus"),
         "--tools", "WebSearch,WebFetch",
         "--allowedTools", "WebSearch,WebFetch",
-        "--system-prompt", SYSTEM,
+        "--system-prompt", system,
         "--json-schema", json.dumps(SCHEMA, ensure_ascii=False),
         "--output-format", "json",
     ]
@@ -119,7 +124,7 @@ def _claude_code(history_summary: str, timeout: int) -> dict:
     return result["structured_output"]
 
 
-def _codex(history_summary: str, timeout: int) -> dict:
+def _codex(system: str, history_summary: str, timeout: int) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         schema_path = os.path.join(tmp, "schema.json")
         out_path = os.path.join(tmp, "answer.json")
@@ -131,13 +136,13 @@ def _codex(history_summary: str, timeout: int) -> dict:
         model = os.environ.get("HISTORIAN_CODEX_MODEL")
         if model:
             cmd += ["-m", model]
-        _run(cmd + ["-"], SYSTEM + "\n\n---\n\n" + _user_prompt(history_summary), timeout)
+        _run(cmd + ["-"], system + "\n\n---\n\n" + _user_prompt(history_summary), timeout)
         with open(out_path, encoding="utf-8") as f:
             return _parse_json_reply(f.read())
 
 
-def _gemini(history_summary: str, timeout: int) -> dict:
-    prompt = (SYSTEM + "\n\n---\n\n" + _user_prompt(history_summary)
+def _gemini(system: str, history_summary: str, timeout: int) -> dict:
+    prompt = (system + "\n\n---\n\n" + _user_prompt(history_summary)
               + "\n\nОтветь ТОЛЬКО JSON-объектом по этой схеме, без пояснений:\n"
               + json.dumps(SCHEMA, ensure_ascii=False))
     cmd = [_find("gemini"), "--output-format", "json", "--approval-mode", "plan",
@@ -155,7 +160,7 @@ def _gemini(history_summary: str, timeout: int) -> dict:
 RUNNERS = {"claude-code": _claude_code, "codex": _codex, "gemini": _gemini}
 
 
-def generate_story(engine: str, history_summary: str, timeout: int = 1800) -> dict:
-    story = _validate(RUNNERS[engine](history_summary, timeout))
+def generate_story(engine: str, history_summary: str, theme: str, language: str, timeout: int = 1800) -> dict:
+    story = _validate(RUNNERS[engine](system_prompt(theme, language), history_summary, timeout))
     story["engine"] = engine
     return story

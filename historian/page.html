@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Historian</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fffdf8;--ink:#1f1d1a;--muted:#6f6a61;--line:#e2ddd2;--accent:#1f1d1a;--bad:#a8321e;--good:#2f6b3a}
+@media (prefers-color-scheme: dark){:root{--bg:#171614;--card:#201f1c;--ink:#ece8df;--muted:#a19a8d;--line:#35322d;--accent:#ece8df;--bad:#e0745f;--good:#7cc08a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:28px 16px 60px}
+h1{font:600 26px/1.2 Georgia,"Times New Roman",serif;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;display:flex;justify-content:space-between;gap:10px}
+h2 .saved{text-transform:none;letter-spacing:0;font-weight:500}
+label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+input,textarea,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+textarea{min-height:110px;resize:vertical}textarea.theme{min-height:70px}
+input[type=checkbox]{width:auto;margin:0 8px 0 0;vertical-align:-2px}input[type=time]{width:auto}
+button{font:600 15px system-ui,sans-serif;border-radius:8px;border:1px solid var(--accent);padding:10px 18px;cursor:pointer;background:var(--accent);color:var(--bg)}
+button.ghost{background:transparent;color:var(--ink);border-color:var(--line);font-weight:500}
+button.danger{background:transparent;color:var(--bad);border-color:var(--line);font-weight:500;font-size:13px;padding:7px 12px}
+button:disabled{opacity:.45;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}@media (max-width:560px){.two{grid-template-columns:1fr}}
+.hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+.status{font-size:14px;color:var(--muted)}.status.err{color:var(--bad)}.status.ok{color:var(--good)}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.tab{background:var(--card);color:var(--ink);border-color:var(--line);font-weight:500;padding:8px 14px}
+.tab.on{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.tab small{opacity:.7;font-weight:400}
+.newacc{display:none;gap:8px;margin:-6px 0 16px}.newacc.open{display:flex}.newacc input{flex:1}
+.post{margin-bottom:12px}.meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px}
+.meta .over{color:var(--bad);font-weight:600}.x{border:none;background:none;color:var(--muted);padding:0;font-weight:400;font-size:12px}
+.person{font:600 19px/1.3 Georgia,serif;margin:0}.topic{color:var(--muted);margin:2px 0 14px}
+a{color:inherit}
+.sources a{display:block;color:var(--muted);font-size:13px;word-break:break-all}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:currentColor;border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+details.card summary{cursor:pointer;font-weight:600;list-style:none}details.card summary::-webkit-details-marker{display:none}
+details.card summary::before{content:"▸ ";color:var(--muted)}details[open].card summary::before{content:"▾ "}
+.guide ol{padding-left:22px;margin:12px 0 0}.guide li{margin:0 0 12px}.guide ul{padding-left:18px;margin:6px 0 0;color:var(--muted)}
+code{font:13px ui-monospace,Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;overflow-wrap:break-word}
+.engine-note{font-size:13px;margin-top:6px}.engine-note ol{margin:4px 0 0;padding-left:20px}
+.plan{margin:0 0 4px;padding:0;list-style:none}.plan li{padding:6px 0;border-bottom:1px solid var(--line)}.plan li:last-child{border:none}
+.plan .t{color:var(--muted)}
+hr{border:none;border-top:1px solid var(--line);margin:18px 0 6px}
+</style></head><body><main>
+<h1>Historian</h1><p class="sub">Малоизвестные истории для Threads</p>
+
+<details class="card guide" id="guide"><summary>Как начать</summary>
+<ol>
+<li><b>Аккаунты</b> переключаются вкладками вверху. У каждого своя тема, язык, ИИ, токен Threads, время публикации и свой журнал,
+поэтому истории не повторяются внутри аккаунта. Новый аккаунт: кнопка «+ Добавить аккаунт».</li>
+<li><b>Выберите ИИ</b> в «Настройках аккаунта». Если рядом написано «не установлен», выполните шаги под списком, а потом закройте и снова откройте Historian.bat.</li>
+<li><b>Получите токен Threads</b> (для каждого аккаунта Threads свой):
+<ul>
+<li>Откройте <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → <b>Create App</b> → сценарий <b>Access the Threads API</b> → создайте приложение. Одно приложение подходит для всех ваших аккаунтов.</li>
+<li><b>Use cases</b> → <b>Access the Threads API</b> → <b>Customize</b> → <b>Permissions</b>: должны быть <code>threads_basic</code> и <code>threads_content_publish</code>.</li>
+<li><b>App roles</b> → <b>Roles</b> → <b>Add People</b> → <b>Threads Tester</b> → впишите имя аккаунта Threads. Второй аккаунт добавьте так же.</li>
+<li>Примите приглашение, войдя в этот аккаунт: <a href="https://www.threads.net" target="_blank" rel="noopener">threads.net</a> → Настройки → Аккаунт → Разрешения для сайтов → Приглашения → Принять.</li>
+<li>Снова <b>Use cases</b> → <b>Customize</b> → <b>Settings</b> → <b>User Token Generator</b> → <b>Generate access token</b> напротив нужного аккаунта → скопируйте.
+Если Threads попросит войти, входите именно в тот аккаунт, для которого нужен токен.</li>
+</ul></li>
+<li><b>Вставьте токен</b> в блок «Аккаунт Threads» и нажмите «Сохранить токен». ID определится сам, а продлевать токен бот будет сам.</li>
+<li><b>Опишите тему</b> в поле «О чём аккаунт»: ИИ будет искать истории только про это.</li>
+<li>Нажмите <b>«Сгенерировать»</b>, прочитайте посты, при необходимости поправьте, затем <b>«Опубликовать»</b>.</li>
+<li><b>Каждый день сам</b> (по желанию): поставьте галочку «Публиковать каждый день сам», выберите время,
+а в блоке «Расписание» внизу нажмите «Включить расписание» (один раз на все аккаунты).</li>
+</ol>
+</details>
+
+<nav class="tabs" id="tabs"></nav>
+<div class="newacc" id="newAcc"><input id="newName" placeholder="Название, например «Наука»" autocomplete="off"><button id="createAcc">Создать</button><button class="ghost" id="cancelAcc">Отмена</button></div>
+
+<section class="card"><h2>История дня</h2>
+<div class="row" style="margin-top:0"><button id="gen">Сгенерировать</button><span id="genMsg" class="status"></span></div>
+<div id="draft" style="margin-top:16px"></div>
+</section>
+
+<section class="card"><h2><span>Настройки аккаунта</span><span id="setMsg" class="saved status"></span></h2>
+<label for="name">Название (видно только вам)</label>
+<input id="name" autocomplete="off">
+<label for="theme">О чём аккаунт</label>
+<textarea id="theme" class="theme" placeholder="Например: истории украинских учёных и изобретателей XIX–XX веков"></textarea>
+<p class="hint">ИИ ищет истории только на эту тему. Поля сохраняются сами, когда вы переходите к другому.</p>
+<div class="two">
+<div><label for="lang">Язык постов</label>
+<input id="lang" list="langs" autocomplete="off">
+<datalist id="langs"><option value="українська"><option value="русский"><option value="English"><option value="polski"><option value="Deutsch"><option value="español"><option value="français"></datalist></div>
+<div><label for="engine">ИИ для текстов</label><select id="engine"></select></div>
+</div>
+<div id="engineNote" class="engine-note"></div>
+<label style="margin-top:16px;color:var(--ink);font-size:15px"><input type="checkbox" id="auto">Публиковать каждый день сам в <input type="time" id="time" style="margin-left:6px"></label>
+<p class="hint" id="autoHint"></p>
+<hr>
+<div class="row"><button class="danger" id="del">Удалить аккаунт</button></div>
+</section>
+
+<section class="card"><h2>Аккаунт Threads</h2>
+<div id="who" class="status"></div>
+<label for="uid">THREADS_USER_ID <span style="font-weight:400">(можно оставить пустым, определится по токену)</span></label>
+<input id="uid" autocomplete="off">
+<label for="tok">Токен</label>
+<input id="tok" type="password" autocomplete="off" placeholder="вставьте новый токен, чтобы заменить">
+<div class="row"><button class="ghost" id="save">Сохранить токен</button><span id="saveMsg" class="status"></span></div>
+<p class="hint" id="expiry"></p>
+</section>
+
+<section class="card"><h2>Расписание</h2>
+<ul class="plan" id="plan"></ul>
+<p class="status" id="schedMsg"></p>
+<div class="row" id="schedRow"><button class="ghost" id="sched">Включить расписание</button></div>
+</section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let st = null, cur = null, shownAcc = null, editing = false, limit = 500, lastTabs = '', lastPlan = '';
+try { cur = localStorage.getItem('historian.account'); } catch(e) {}
+
+async function api(path, body){
+  const r = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json(); if(!r.ok) throw new Error(j.error || 'Ошибка'); return j;
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function mmss(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function ddmmyyyy(iso){const [y,m,d] = iso.split('-'); return `${d}.${m}.${y}`}
+function say(el, text, cls){ el.className = 'status ' + (cls || ''); el.textContent = text; }
+
+function pick(id){
+  cur = id; try { localStorage.setItem('historian.account', id || ''); } catch(e) {}
+  editing = false; shownAcc = null; refresh();
+}
+
+function renderTabs(){
+  const key = JSON.stringify([st.account.id, st.accounts]);
+  if(key === lastTabs) return; lastTabs = key;
+  $('tabs').innerHTML = st.accounts.map(a => `<button class="tab ${a.id === st.account.id ? 'on' : ''}" data-id="${a.id}">`
+    + `${a.busy ? '<span class="spin"></span>' : ''}${esc(a.name)}${a.username ? ` <small>@${esc(a.username)}</small>` : ''}</button>`).join('')
+    + `<button class="tab" id="addAcc">+ Добавить аккаунт</button>`;
+  $('tabs').querySelectorAll('[data-id]').forEach(b => b.onclick = () => {
+    if(b.dataset.id === st.account.id) return;
+    if(editing && !confirm('Правки в постах не сохранятся. Переключить аккаунт?')) return;
+    pick(b.dataset.id);
+  });
+  $('addAcc').onclick = () => { $('newAcc').classList.add('open'); $('newName').focus(); };
+}
+
+function engineNote(){
+  const e = st.engines.find(x => x.id === st.account.engine);
+  $('engineNote').innerHTML = !e ? '' : e.available
+    ? '<span class="status ok">Готов к работе</span>'
+    : '<span class="status err">Не установлен. Как подключить:</span><ol>' + e.setup.map(x => `<li>${esc(x)}</li>`).join('') + '</ol>';
+}
+function autoHint(){
+  const a = st.account;
+  $('autoHint').textContent = !a.has_token ? 'Сначала сохраните токен Threads ниже.'
+    : a.auto_publish ? `Бот сам найдёт и опубликует историю в ${a.post_time}, не больше одной в день. Если компьютер был выключен, пост выйдет после включения.`
+    : 'Сейчас только вручную, кнопкой «Опубликовать».';
+}
+function renderAccount(){
+  const a = st.account;
+  $('name').value = a.name; $('theme').value = a.theme; $('lang').value = a.language;
+  $('engine').innerHTML = st.engines.map(e => `<option value="${e.id}" ${e.id === a.engine ? 'selected' : ''}>${esc(e.label)}${e.available ? '' : ' (не установлен)'}</option>`).join('');
+  $('auto').checked = a.auto_publish; $('time').value = a.post_time;
+  engineNote(); autoHint(); say($('setMsg'), '');
+  $('uid').value = a.threads_user_id; $('tok').value = ''; say($('saveMsg'), '');
+  renderToken();
+  if(!a.has_token) $('guide').open = true;
+}
+function renderToken(){
+  const a = st.account;
+  say($('who'), a.has_token ? ('Подключено' + (a.threads_username ? ': @' + a.threads_username : '')) : 'Токен ещё не сохранён', a.has_token ? 'ok' : 'err');
+  $('expiry').textContent = a.has_token && a.token_expires
+    ? `Действует примерно до ${ddmmyyyy(a.token_expires)}. Бот продлевает токен сам раз в неделю, когда запускается.` : '';
+}
+
+async function saveField(field, value){
+  const msg = $('setMsg');
+  try {
+    st.account = await api('/api/account', {id: st.account.id, [field]: value});
+    say(msg, 'Сохранено', 'ok'); setTimeout(() => { if(msg.textContent === 'Сохранено') say(msg, ''); }, 2000);
+    engineNote(); autoHint(); lastTabs = ''; lastPlan = '';
+  } catch(e){
+    say(msg, e.message, 'err');
+    if(field === 'auto_publish') $('auto').checked = st.account.auto_publish;
+    if(field === 'name') $('name').value = st.account.name;
+  }
+}
+$('name').onchange = e => saveField('name', e.target.value);
+$('theme').onchange = e => saveField('theme', e.target.value);
+$('lang').onchange = e => saveField('language', e.target.value);
+$('engine').onchange = e => saveField('engine', e.target.value);
+$('auto').onchange = e => saveField('auto_publish', e.target.checked);
+$('time').onchange = e => { if(e.target.value) saveField('post_time', e.target.value); };
+
+function renderDraft(){
+  const d = $('draft'); const s = st.job.story;
+  if(!s){ d.innerHTML = '<p class="status">Черновиков пока нет. Нажмите «Сгенерировать», это займёт несколько минут.</p>'; return; }
+  const eng = st.engines.find(e => e.id === s.engine);
+  d.innerHTML = `<p class="person">${esc(s.person)}</p><p class="topic">${esc(s.topic)}${eng ? ' · ' + esc(eng.label) : ''}</p>
+    <div id="posts"></div>
+    <button class="ghost" id="add">+ Добавить пост</button>
+    <div class="sources" style="margin-top:14px">${(s.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('')}</div>
+    <div class="row"><button id="pub">Опубликовать</button><span id="pubMsg" class="status"></span></div>`;
+  s.threads_posts.forEach(addPost);
+  $('add').onclick = () => { addPost(''); editing = true; };
+  $('pub').onclick = publish;
+}
+function addPost(text){
+  const wrap = document.createElement('div'); wrap.className = 'post';
+  wrap.innerHTML = `<textarea></textarea><div class="meta"><span class="n"></span><button class="x">удалить</button></div>`;
+  const ta = wrap.querySelector('textarea'); ta.value = text;
+  const upd = () => { const n = ta.value.length; const el = wrap.querySelector('.n');
+    el.textContent = n + ' / ' + limit + (n > limit ? ' (будет разбит на части)' : ''); el.className = 'n' + (n > limit ? ' over' : ''); };
+  ta.oninput = () => { editing = true; upd(); }; upd();
+  wrap.querySelector('.x').onclick = () => { wrap.remove(); editing = true; };
+  $('posts').appendChild(wrap);
+}
+function renderStatus(){
+  const j = st.job, busy = j.status === 'generating' || j.status === 'publishing';
+  $('gen').disabled = busy;
+  if($('pub')) $('pub').disabled = busy || j.published || !st.account.has_token;
+  const g = $('genMsg'), p = $('pubMsg');
+  say(g, ''); if(p) say(p, '');
+  if(j.status === 'generating') g.innerHTML = `<span class="spin"></span>Ищу историю… ${mmss(j.elapsed)}`;
+  else if(j.status === 'publishing' && p) p.innerHTML = `<span class="spin"></span>Публикую…`;
+  else if(j.status === 'error') say((p && j.story) ? p : g, j.message, 'err');
+  else if(j.published && p){ p.className = 'status ok';
+    p.innerHTML = j.link ? `Опубликовано: <a href="${esc(j.link)}" target="_blank" rel="noopener">открыть в Threads</a>` : 'Уже опубликовано'; }
+  else if(p && !st.account.has_token) say(p, 'Чтобы публиковать, сохраните токен Threads ниже.');
+}
+
+function renderSchedule(){
+  const sc = st.schedule;
+  const key = JSON.stringify([st.accounts, sc]);
+  if(key === lastPlan) return; lastPlan = key;
+  $('plan').innerHTML = st.accounts.map(a => `<li><b>${esc(a.name)}</b> <span class="t">${
+    !a.has_token ? 'нет токена Threads' : a.auto_publish ? 'каждый день в ' + a.post_time : 'только вручную'}</span></li>`).join('');
+  const texts = {
+    hourly: ['Включено: бот проверяет аккаунты каждый час, пока компьютер включён.', 'ok'],
+    daily: ['Включено по старой схеме, раз в день в одно время. Нажмите «Обновить расписание», чтобы бот проверял все аккаунты каждый час.', 'err'],
+    none: ['Расписание Windows не включено, поэтому бот публикует только по кнопке.', ''],
+    unknown: ['Не удалось проверить расписание Windows.', ''],
+  };
+  if(!sc.supported){
+    say($('schedMsg'), 'Автопубликация работает через планировщик Windows. На этом компьютере запускайте раз в час: python -m historian.main --due');
+    $('schedRow').style.display = 'none'; return;
+  }
+  const [text, cls] = texts[sc.status] || texts.unknown;
+  say($('schedMsg'), text, cls);
+  $('schedRow').style.display = sc.status === 'hourly' ? 'none' : '';
+  $('sched').textContent = sc.status === 'daily' ? 'Обновить расписание' : 'Включить расписание';
+}
+
+async function refresh(){
+  const want = cur;
+  let s;
+  try { s = await api('/api/state' + (want ? '?account=' + encodeURIComponent(want) : '')); }
+  catch(e){ return; }
+  if(want !== cur) return;  // пока ждали ответ, переключились на другой аккаунт
+  const prev = st; st = s; limit = st.limit; cur = st.account.id;
+  renderTabs(); renderSchedule();
+  if(shownAcc !== st.account.id){ shownAcc = st.account.id; renderAccount(); renderDraft(); renderStatus(); return; }
+  const changed = !prev || JSON.stringify(prev.job.story) !== JSON.stringify(st.job.story);
+  if(changed && !editing) renderDraft();
+  renderStatus();
+}
+async function publish(){
+  const posts = [...document.querySelectorAll('#posts textarea')].map(t => t.value);
+  try { await api('/api/publish', {id: st.account.id, posts, draft: st.job.draft}); editing = false; await refresh(); }
+  catch(e){ say($('pubMsg'), e.message, 'err'); }
+}
+$('gen').onclick = async () => {
+  if(st.job.story && !st.job.published && !confirm('Текущий черновик не опубликован. Сгенерировать новый?')) return;
+  try { editing = false; await api('/api/generate', {id: st.account.id}); await refresh(); }
+  catch(e){ say($('genMsg'), e.message, 'err'); }
+};
+$('save').onclick = async () => {
+  say($('saveMsg'), 'Проверяю токен…');
+  try { st.account = await api('/api/token', {id: st.account.id, user_id: $('uid').value, token: $('tok').value});
+    $('tok').value = ''; $('uid').value = st.account.threads_user_id; renderToken(); autoHint(); lastTabs = ''; lastPlan = '';
+    say($('saveMsg'), 'Сохранено', 'ok'); renderStatus(); }
+  catch(e){ say($('saveMsg'), e.message, 'err'); }
+};
+$('del').onclick = async () => {
+  if(!confirm(`Удалить аккаунт «${st.account.name}» из бота? Сам аккаунт в Threads останется, а журнал и черновики бот уберёт в папку accounts\\_deleted.`)) return;
+  try { await api('/api/account/delete', {id: st.account.id}); pick(null); }
+  catch(e){ say($('setMsg'), e.message, 'err'); }
+};
+$('createAcc').onclick = async () => {
+  try { const a = await api('/api/accounts', {name: $('newName').value});
+    $('newName').value = ''; $('newAcc').classList.remove('open'); pick(a.id); }
+  catch(e){ $('newName').placeholder = e.message; $('newName').focus(); }
+};
+$('newName').onkeydown = e => { if(e.key === 'Enter') $('createAcc').click(); if(e.key === 'Escape') $('cancelAcc').click(); };
+$('cancelAcc').onclick = () => { $('newName').value = ''; $('newAcc').classList.remove('open'); };
+$('sched').onclick = async () => {
+  $('sched').disabled = true; say($('schedMsg'), 'Включаю…');
+  try { st.schedule = await api('/api/schedule', {}); lastPlan = ''; renderSchedule(); }
+  catch(e){ say($('schedMsg'), e.message, 'err'); }
+  $('sched').disabled = false;
+};
+refresh(); setInterval(refresh, 2000);
+</script></body></html>

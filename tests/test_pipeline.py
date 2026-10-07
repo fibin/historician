@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from historian import history, main, research, writer
+from historian import accounts, history, main, research, writer
 from historian.publishers import threads as threads_pub
 
 STORY = {
@@ -17,47 +17,48 @@ STORY = {
 def fake_llm(monkeypatch):
     calls = []
 
-    def find_story(client, summary):
-        calls.append(summary)
+    def find_story(client, summary, theme):
+        calls.append((summary, theme))
         return "ДОСЬЕ", [{"url": "https://example.com/a", "title": "A"}]
+
+    def write_posts(client, dossier, urls, language):
+        calls.append(language)
+        return next(stories)
 
     stories = iter([dict(STORY, person="Пётр I"), dict(STORY)])
     monkeypatch.setattr("anthropic.Anthropic", lambda: None)
     monkeypatch.setattr(research, "find_story", find_story)
-    monkeypatch.setattr(writer, "write_posts", lambda c, d, u: next(stories))
+    monkeypatch.setattr(writer, "write_posts", write_posts)
     return calls
 
 
 def test_generate_skips_recent_people_and_fits_lengths(fake_llm):
     entries = [{"person": "Пётр I", "topic": "x", "sources": []}]
-    story = main.generate("api", entries)
+    story = main.generate("api", entries, theme="наука", language="English")
     assert story["person"] == "Тихо Браге"
-    assert len(fake_llm) == 2 and "Пётр I" in fake_llm[0]
+    assert len(fake_llm) == 4 and "Пётр I" in fake_llm[0][0]
+    assert fake_llm[0][1] == "наука" and fake_llm[1] == "English"
     assert all(len(p) <= 500 for p in story["threads_posts"])
     assert len(story["threads_posts"]) > 3  # длинная середина разрезана
 
 
 def test_draft_mode_does_not_publish(fake_llm, tmp_path, monkeypatch):
-    monkeypatch.setattr(main, "HISTORY_PATH", str(tmp_path / "h.json"))
     monkeypatch.setattr(main, "publish", lambda *a, **k: pytest.fail("published in draft mode"))
-    monkeypatch.setattr("anthropic.Anthropic", lambda: None)
-    main.main(["--engine", "api", "--out-dir", str(tmp_path / "out")])
-    drafts = list((tmp_path / "out").glob("*.json"))
+    main.main(["--engine", "api"])
+    drafts = list((tmp_path / "accounts" / "main" / "out").glob("*.json"))
     assert len(drafts) == 1
-    assert not (tmp_path / "h.json").exists()
+    assert not (tmp_path / "accounts" / "main" / "history.json").exists()
 
 
 def test_publish_from_draft_records_history(tmp_path, monkeypatch):
     draft = tmp_path / "d.json"
     draft.write_text(json.dumps(STORY, ensure_ascii=False), encoding="utf-8")
-    hist = tmp_path / "h.json"
-    monkeypatch.setattr(main, "HISTORY_PATH", str(hist))
     for k in ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"):
-        monkeypatch.setenv(k, "v")
+        monkeypatch.setenv(k, "v")  # из старого .env создаётся первый аккаунт
     sent = {}
     monkeypatch.setattr(threads_pub, "post_thread", lambda c, p: sent.setdefault("t", p) and ["222"])
     main.main(["--from-draft", str(draft), "--publish"])
-    saved = history.load(str(hist))
+    saved = history.load(str(tmp_path / "accounts" / "main" / "history.json"))
     assert saved[0]["person"] == "Тихо Браге"
     assert saved[0]["posted"] == {"threads": "222"}
 
@@ -89,9 +90,8 @@ def test_threads_container_then_publish(monkeypatch):
 def test_from_draft_rejects_recent_person_and_fits(tmp_path, monkeypatch):
     draft = tmp_path / "d.json"
     draft.write_text(json.dumps(STORY, ensure_ascii=False), encoding="utf-8")
-    hist = tmp_path / "h.json"
-    history.save(str(hist), [{"person": "Тихо Браге", "topic": "t", "sources": []}])
-    monkeypatch.setattr(main, "HISTORY_PATH", str(hist))
+    acc = accounts.create("Наука")
+    history.save(acc.history_path, [{"person": "Тихо Браге", "topic": "t", "sources": []}])
     with pytest.raises(SystemExit):
-        main.main(["--from-draft", str(draft)])
+        main.main(["--from-draft", str(draft), "--account", acc.id])
     assert len(main.fit_story(dict(STORY))["threads_posts"]) > 3
