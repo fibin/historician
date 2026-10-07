@@ -4,13 +4,11 @@ import pytest
 
 from historian import history, main, research, writer
 from historian.publishers import threads as threads_pub
-from historian.publishers import x as x_pub
 
 STORY = {
     "person": "Тихо Браге",
     "topic": "лось, который напился пива",
-    "x_posts": ["Крючок.", "Середина. " * 40, "Источник: https://example.com/a"],
-    "threads_posts": ["Вся история.", "https://example.com/a"],
+    "threads_posts": ["Крючок.", "Середина. " * 80, "Источник: https://example.com/a"],
     "sources": ["https://example.com/a", "https://example.com/b"],
 }
 
@@ -35,8 +33,8 @@ def test_generate_skips_recent_people_and_fits_lengths(fake_llm):
     story = main.generate("api", entries)
     assert story["person"] == "Тихо Браге"
     assert len(fake_llm) == 2 and "Пётр I" in fake_llm[0]
-    assert all(len(p) <= 280 for p in story["x_posts"])
-    assert len(story["x_posts"]) > 3  # длинная середина разрезана
+    assert all(len(p) <= 500 for p in story["threads_posts"])
+    assert len(story["threads_posts"]) > 3  # длинная середина разрезана
 
 
 def test_draft_mode_does_not_publish(fake_llm, tmp_path, monkeypatch):
@@ -54,16 +52,14 @@ def test_publish_from_draft_records_history(tmp_path, monkeypatch):
     draft.write_text(json.dumps(STORY, ensure_ascii=False), encoding="utf-8")
     hist = tmp_path / "h.json"
     monkeypatch.setattr(main, "HISTORY_PATH", str(hist))
-    for k in ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET",
-              "THREADS_USER_ID", "THREADS_ACCESS_TOKEN"):
+    for k in ("THREADS_USER_ID", "THREADS_ACCESS_TOKEN"):
         monkeypatch.setenv(k, "v")
     sent = {}
-    monkeypatch.setattr(x_pub, "post_thread", lambda c, p: sent.setdefault("x", p) and ["111", "112"])
     monkeypatch.setattr(threads_pub, "post_thread", lambda c, p: sent.setdefault("t", p) and ["222"])
     main.main(["--from-draft", str(draft), "--publish"])
     saved = history.load(str(hist))
     assert saved[0]["person"] == "Тихо Браге"
-    assert saved[0]["posted"] == {"x": "https://x.com/i/status/111", "threads": "222"}
+    assert saved[0]["posted"] == {"threads": "222"}
 
 
 class FakeResp:
@@ -72,25 +68,6 @@ class FakeResp:
 
     def json(self):
         return self._data
-
-
-def test_x_thread_chains_replies(monkeypatch):
-    payloads = []
-
-    class FakeSession:
-        def __init__(self, *a):
-            pass
-
-        def post(self, url, json, timeout):
-            payloads.append(json)
-            return FakeResp(201, {"data": {"id": str(len(payloads))}})
-
-    monkeypatch.setattr(x_pub, "OAuth1Session", FakeSession)
-    creds = x_pub.XCredentials("k", "s", "t", "ts")
-    ids = x_pub.post_thread(creds, ["a", "b", "c"])
-    assert ids == ["1", "2", "3"]
-    assert "reply" not in payloads[0]
-    assert payloads[2]["reply"] == {"in_reply_to_tweet_id": "2"}
 
 
 def test_threads_container_then_publish(monkeypatch):
@@ -117,7 +94,7 @@ def test_from_draft_rejects_recent_person_and_fits(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "HISTORY_PATH", str(hist))
     with pytest.raises(SystemExit):
         main.main(["--from-draft", str(draft)])
-    assert len(main.fit_story(dict(STORY))["x_posts"]) > 3
+    assert len(main.fit_story(dict(STORY))["threads_posts"]) > 3
 
 
 def test_claude_code_engine_reads_structured_output(monkeypatch):

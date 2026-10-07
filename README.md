@@ -4,9 +4,9 @@
 1. **Ищет** в интернете малоизвестную историю о конкретном человеке: привычки, причуды, эпизоды из мемуаров,
    дневников и писем современников. Общеизвестные факты отбрасываются, история должна подтверждаться
    минимум двумя источниками (Claude + веб-поиск, `historian/research.py`).
-2. **Пишет** посты: тред для X (части ≤ 280 символов) и пост/цепочку для Threads (≤ 500), со ссылкой на источник
+2. **Пишет** посты: пост или цепочку постов для Threads (каждый ≤ 500 символов), со ссылкой на источник
    (`historian/writer.py`). Длины проверяются кодом, лишнее аккуратно режется по предложениям.
-3. **Публикует** в X и Threads, только если публикация явно включена. Иначе сохраняет черновик в `out/`.
+3. **Публикует** в Threads, только если публикация явно включена. Иначе сохраняет черновик в `out/`.
 4. **Запоминает** человека и тему в `data/history.json`, чтобы не повторяться (люди за последние ~2 месяца
    исключаются полностью, темы за всё время передаются модели как «уже было»).
 
@@ -17,7 +17,6 @@ pip install -r requirements.txt
 python -m historian.main                       # черновик через Claude Code (подписка)
 python -m historian.main --engine api          # черновик через Claude API (нужен ANTHROPIC_API_KEY)
 python -m historian.main --from-draft out/2026-10-07.json --publish   # опубликовать проверенный черновик
-python -m historian.main --publish --no-threads                       # только в X
 python -m pytest -q tests                      # тесты (без сети и ключей)
 ```
 
@@ -27,11 +26,6 @@ python -m pytest -q tests                      # тесты (без сети и 
 ## Ключи
 
 **Claude API** — нужен только для `--engine api`: `ANTHROPIC_API_KEY` из console.anthropic.com.
-
-**X (x.com)** — в developer.x.com создать проект и приложение, в User authentication settings включить
-права *Read and write*, затем сгенерировать Access Token и Secret **после** смены прав.
-Нужны: `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET`.
-Публикация через API у X платная, тариф смотрите в консоли разработчика.
 
 **Threads** — в developers.facebook.com создать приложение с продуктом *Threads API*, разрешения
 `threads_basic` и `threads_content_publish`, добавить свой аккаунт тестировщиком, получить
@@ -60,7 +54,7 @@ python -m pytest -q tests                      # тесты (без сети и 
 5. Ежедневный запуск:
    `powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1 -Time 10:00`.
    Если компьютер был выключен в это время, бот запустится при следующем включении. Логи лежат в `logs\`.
-6. Когда качество черновиков устроит, впишите ключи X/Threads в `.env` и поставьте `HISTORIAN_PUBLISH=true`.
+6. Когда качество черновиков устроит, впишите ключи Threads в `.env` и поставьте `HISTORIAN_PUBLISH=true`.
 
 ## Ежедневный запуск через GitHub Actions (режим API)
 
@@ -84,7 +78,7 @@ historian/
   writer.py      промпт автора, JSON-схема постов
   claude_code.py режим подписки: запуск Claude Code
   llm.py         вызов Claude: стриминг, продолжение долгого поиска, обработка отказа
-  textfit.py     подсчёт длины по правилам X и нарезка
+  textfit.py     проверка длины и нарезка
   history.py     журнал опубликованного
-  publishers/    x.py (API v2, OAuth 1.0a), threads.py (Threads Graph API)
+  publishers/    threads.py (Threads Graph API)
 ```

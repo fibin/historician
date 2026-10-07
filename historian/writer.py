@@ -1,8 +1,8 @@
-"""Шаг 2: превратить досье в посты для X (тред) и Threads."""
+"""Шаг 2: превратить досье в посты для Threads."""
 import json
 
 from . import llm
-from .config import LANGUAGE, THREADS_LIMIT, X_LIMIT
+from .config import LANGUAGE, THREADS_LIMIT
 
 SYSTEM = f"""Ты автор исторического блога. Пишешь коротко, живо, с интригой в первой фразе,
 без канцелярита, без кликбейта и без выдумок: только то, что есть в досье.
@@ -10,10 +10,8 @@ SYSTEM = f"""Ты автор исторического блога. Пишешь
 Язык постов: {LANGUAGE}. Пиши только на этом языке, даже если досье на другом; имена, названия и цитаты передавай по нормам этого языка. Без хештегов, максимум один уместный эмодзи на весь текст или ни одного.
 
 Формат:
-- x_posts: тред для X. Каждая часть не длиннее {X_LIMIT - 10} символов. 3–6 частей.
-  Первая часть — крючок, который заставит открыть тред. Последняя — ссылка на один главный источник.
-- threads_posts: та же история для Threads. Каждая часть не длиннее {THREADS_LIMIT - 20} символов, 1–4 части.
-  Последняя часть заканчивается ссылкой на главный источник.
+- threads_posts: история для Threads, цепочка из 1–4 постов. Каждый пост не длиннее {THREADS_LIMIT - 20} символов.
+  Первый пост — крючок, который заставит читать дальше. Последний заканчивается ссылкой на главный источник.
 - person, topic: кто и о чём (коротко, для журнала).
 - sources: 2–4 URL из досье, на которые опирается текст."""
 
@@ -22,11 +20,10 @@ SCHEMA = {
     "properties": {
         "person": {"type": "string"},
         "topic": {"type": "string"},
-        "x_posts": {"type": "array", "items": {"type": "string"}},
         "threads_posts": {"type": "array", "items": {"type": "string"}},
         "sources": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["person", "topic", "x_posts", "threads_posts", "sources"],
+    "required": ["person", "topic", "threads_posts", "sources"],
     "additionalProperties": False,
 }
 
