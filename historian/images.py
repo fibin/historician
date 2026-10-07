@@ -1,11 +1,16 @@
-"""Картинка к посту из Wikimedia Commons: архивные фото, картины, гравюры, карты.
+"""Картинка к первому посту. Два источника:
 
-На Commons только свободные файлы (общественное достояние или открытые лицензии), поэтому их можно публиковать.
-Для лицензий, которые требуют указать автора (CC BY, CC BY-SA), бот добавляет подпись в конец последнего поста.
+- Wikimedia Commons: архивные фото, картины, гравюры, карты. Там только свободные файлы (общественное достояние
+  или открытые лицензии); для лицензий, которые требуют указать автора, бот добавляет подпись в конец цепочки.
+- Статья-источник: главная картинка страницы (og:image), та же, что видна в превью ссылки. Подходит для новостей
+  и свежих тем, которых нет на Commons. Права на неё у издания, поэтому бот всегда подписывает сайт.
+
 Threads сам скачивает картинку по ссылке, поэтому хранить файлы у себя не нужно.
 """
+import html
 import re
 import sys
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -15,6 +20,17 @@ WIDTH = 1280      # стандартный размер миниатюр Commons
 PREVIEW = 330     # маленькая копия для окна
 MIN_WIDTH = 500   # мельче выглядит плохо
 OPTIONS = 6       # сколько вариантов показывать в окне
+MAX_BYTES = 8 * 1024 * 1024  # больше Threads не принимает
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/129.0 Safari/537.36")  # многие сайты не отдают страницу «ботам»
+# Откуда брать картинку: значение настройки аккаунта → источники по порядку
+SOURCES = {
+    "commons+article": ("commons", "article"),
+    "article+commons": ("article", "commons"),
+    "commons": ("commons",),
+    "article": ("article",),
+}
+DEFAULT_SOURCE = "commons+article"
 
 
 def _plain(html: str) -> str:
@@ -85,6 +101,78 @@ def find_explained(queries: list[str], want: int = OPTIONS) -> tuple[list[dict],
     return [], "На Wikimedia Commons ничего не нашлось по запросам: " + "; ".join(queries[:4])
 
 
+def _meta_image(page_html: str) -> tuple[str, str]:
+    """Главная картинка и заголовок страницы из тегов og:/twitter:."""
+    found: dict[str, str] = {}
+    for tag in re.findall(r"<meta\b[^>]*>", page_html[:500_000], re.I):
+        attrs = dict((k.lower(), html.unescape(v1 or v2)) for k, v1, v2 in
+                     re.findall(r'([\w:-]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\')', tag))
+        key = (attrs.get("property") or attrs.get("name") or "").lower()
+        if key and attrs.get("content") and key not in found:
+            found[key] = attrs["content"].strip()
+    image = next((found[k] for k in ("og:image:secure_url", "og:image", "og:image:url", "twitter:image",
+                                     "twitter:image:src") if found.get(k)), "")
+    return image, found.get("og:title") or found.get("twitter:title") or ""
+
+
+def _usable(url: str) -> bool:
+    """Threads берёт JPEG и PNG до 8 МБ: проверяем, что по ссылке именно такая картинка."""
+    try:
+        with requests.get(url, headers={"User-Agent": BROWSER_UA, "Accept": "image/jpeg,image/png;q=0.9,*/*;q=0.1"},
+                          timeout=15, stream=True) as r:
+            kind = r.headers.get("Content-Type", "").split(";")[0].strip().lower()
+            size = int(r.headers.get("Content-Length") or 0)
+            return r.status_code == 200 and kind in ("image/jpeg", "image/png") and size <= MAX_BYTES
+    except Exception:
+        return False
+
+
+def from_article(page_url: str) -> dict | None:
+    """Главная картинка статьи или None, если её нет или Threads её не примет."""
+    try:
+        r = requests.get(page_url, headers={"User-Agent": BROWSER_UA, "Accept-Language": "uk,ru;q=0.8,en;q=0.6"},
+                         timeout=20)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"Не удалось открыть статью {page_url}: {e}", file=sys.stderr)
+        return None
+    image, title = _meta_image(r.text)
+    if not image:
+        return None
+    image = urljoin(r.url, image)
+    if not image.startswith("https://") or not _usable(image):
+        return None
+    site = urlparse(r.url).netloc.removeprefix("www.")
+    return {"url": image, "preview": image, "page": page_url, "title": title[:150] or site, "author": site,
+            "license": "", "attribution": True, "source": "article"}
+
+
+def from_articles(urls: list[str], want: int = OPTIONS) -> list[dict]:
+    found = []
+    for url in urls[:4]:
+        if len(found) >= want:
+            break
+        img = from_article(url) if url.startswith("http") else None
+        if img and img["url"] not in {i["url"] for i in found}:
+            found.append(img)
+    return found
+
+
+def collect(queries: list[str], article_urls: list[str], source: str = DEFAULT_SOURCE) -> tuple[list[dict], str]:
+    """Варианты картинок из выбранных источников по порядку и объяснение, если ничего не нашлось."""
+    found, notes = [], []
+    for kind in SOURCES.get(source, SOURCES[DEFAULT_SOURCE]):
+        if kind == "commons":
+            imgs, note = find_explained(queries)
+        else:
+            imgs = from_articles(article_urls)
+            note = "" if imgs else "В статьях-источниках нет картинки, которую примет Threads (нужен JPEG или PNG)."
+        found += [i for i in imgs if i["url"] not in {f["url"] for f in found}]
+        if note:
+            notes.append(note)
+    return found[:OPTIONS], ("" if found else " ".join(notes))
+
+
 def chosen(story: dict) -> dict | None:
     """Картинка, выбранная в черновике (поле image — номер варианта или None)."""
     i, options = story.get("image"), story.get("images") or []
@@ -95,5 +183,7 @@ def credit(img: dict) -> str:
     """Подпись для лицензий, которые требуют указать автора; для общественного достояния пусто."""
     if not img.get("attribution"):
         return ""
+    if img.get("source") == "article":
+        return f"🖼 {img['author']}"
     who = f"{img['author']}, " if img.get("author") else ""
     return f"🖼 {who}{img['license']}, Wikimedia Commons"

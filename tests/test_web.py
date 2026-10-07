@@ -188,3 +188,10 @@ def test_posts_per_chain_setting_reaches_the_prompt(monkeypatch):
     acc.theme = "тема"
     story = main.generate_for(acc)
     assert seen["posts"] == (2, 4) and len(story["threads_posts"]) == 4  # лишние короткие посты склеены
+
+
+def test_image_source_setting():
+    acc = accounts.ensure()[0]
+    assert web.update_account(acc.id, {"image_source": "article+commons"})["image_source"] == "article+commons"
+    with pytest.raises(ValueError, match="источник"):
+        web.update_account(acc.id, {"image_source": "google"})
