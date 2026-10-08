@@ -1,11 +1,15 @@
 ﻿# Регистрирует задачу Windows «Historian bot»: каждый час бот проверяет, в каких аккаунтах пора публиковать.
 # Время и галочка «Публиковать каждый день сам» задаются для каждого аккаунта в окне бота.
 # Запуск: powershell -ExecutionPolicy Bypass -File scripts\install_task.ps1 (или кнопка «Включить расписание» в окне)
-param([string]$Time = "")  # больше не нужен: время задаётся в окне для каждого аккаунта
+# Historian.exe передаёт -Exe (что запускать) и -Root (папка с accounts), остальным они не нужны.
+param([string]$Time = "", [string]$Exe = "", [string]$Root = "")  # Time больше не нужен: время задаётся в окне
 $ErrorActionPreference = "Stop"
-$root = Split-Path -Parent $PSScriptRoot
+$root = if ($Root) { $Root } else { Split-Path -Parent $PSScriptRoot }
 $pyw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
-if ($pyw) {
+if ($Exe) {
+    # Historian.exe по расписанию работает без окна и сам пишет лог в logs\
+    $action = New-ScheduledTaskAction -Execute $Exe -Argument "--due" -WorkingDirectory $root
+} elseif ($pyw) {
     # pythonw работает без окна, поэтому раз в час на экране ничего не мелькает
     $action = New-ScheduledTaskAction -Execute $pyw -Argument "-m historian.main --due --log-dir logs" -WorkingDirectory $root
 } else {

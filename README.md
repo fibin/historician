@@ -27,21 +27,35 @@
 
 ## Быстрый старт (Windows)
 
-1. Установите [Python 3.12+](https://www.python.org/downloads/) (галочка «Add python.exe to PATH»)
-   и [Git](https://git-scm.com/download/win).
-2. Установите ИИ, через который будут писаться посты. Для Claude в PowerShell выполните
+1. Установите ИИ, через который будут писаться посты. Для Claude в PowerShell выполните
    `irm https://claude.ai/install.ps1 | iex`, затем `claude` и войдите своим аккаунтом Claude.
    Как поставить ChatGPT (Codex) или Gemini, окно бота покажет само.
-3. Скачайте бота и поставьте зависимости:
+2. Скачайте **`Historian.exe`** из [последнего релиза](https://github.com/fibin/historician/releases/latest)
+   и положите в отдельную папку, например `C:\Historian`. Рядом с ним бот будет хранить аккаунты, черновики и логи.
+   Если бот уже работал из папки с Python-версией, положите exe туда, где лежит папка `accounts`, и всё подхватится.
+3. Запустите `Historian.exe` двойным щелчком. Windows может написать «Система Windows защитила ваш компьютер»:
+   exe не подписан платным сертификатом, нажмите «Подробнее» → «Выполнить в любом случае».
+   В браузере откроется окно бота, а в нём раздел «Как начать» с пошаговой инструкцией: как получить токен Threads,
+   вставить его и сгенерировать первый пост. Пока бот работает, открыто чёрное окно консоли; закроете его, бот остановится.
+
+Обновление: закройте окно Historian и замените `Historian.exe` новым из
+[релизов](https://github.com/fibin/historician/releases/latest). GitHub собирает новый exe сам после каждого изменения
+в `main` (`.github/workflows/exe.yml`), версия видна в окне бота под заголовком. Если расписание включали из
+Python-версии, окно попросит нажать «Обновить расписание», чтобы его запускал exe.
+
+### Запуск через Python (для разработки)
+
+1. Установите [Python 3.12+](https://www.python.org/downloads/) (галочка «Add python.exe to PATH»)
+   и [Git](https://git-scm.com/download/win).
+2. Скачайте бота и поставьте зависимости:
    ```powershell
    git clone https://github.com/fibin/historician
    cd historician
    pip install -r requirements.txt
    ```
-4. Дважды щёлкните **`Historian.bat`**. В браузере откроется окно бота, а в нём раздел «Как начать»
-   с пошаговой инструкцией: как получить токен Threads, вставить его и сгенерировать первый пост.
+3. Дважды щёлкните **`Historian.bat`**. Обновление: `git pull`, затем снова `Historian.bat`.
 
-Обновление: `git pull` в папке бота, затем снова `Historian.bat`.
+Собрать exe самому: `pip install pyinstaller`, затем `pyinstaller Historian.spec`, exe появится в `dist\`.
 
 ## Окно бота
 
@@ -91,8 +105,8 @@
 субтитры по 1–3 слова с подсветкой текущего. Видео и описание с хештегами и авторами картинок лежат
 в `accounts\<id>\video\`. Загружать пока вручную; при загрузке отметьте, что голос синтезирован.
 
-Нужен FFmpeg: `winget install Gyan.FFmpeg` в PowerShell, потом перезапустить Historian.bat. Пакет `edge-tts`
-Historian.bat ставит сам из requirements.txt. Фоновая музыка по желанию: mp3 в папке `music\`
+Нужен FFmpeg: `winget install Gyan.FFmpeg` в PowerShell, потом перезапустить Historian. Озвучка `edge-tts` уже
+внутри Historian.exe (Historian.bat ставит её сам из requirements.txt). Фоновая музыка по желанию: mp3 в папке `music\`
 (например, из фонотеки YouTube), бот берёт случайный трек и делает его тихим.
 
 ## Токен Threads
@@ -161,5 +175,5 @@ historian/
   textfit.py     проверка длины и нарезка
   history.py     журнал опубликованного
   publishers/    threads.py (Threads Graph API)
-scripts/         задача Windows для расписания
+scripts/         задача Windows для расписания; historian_exe.py — точка входа Historian.exe (Historian.spec)
 ```
