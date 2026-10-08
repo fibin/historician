@@ -68,7 +68,7 @@ table.stats tr.top td:first-child a{font-weight:600}
 .com .row{margin-top:8px}.com button{font-size:13px;padding:7px 13px}
 @media (max-width:560px){.vid{flex-direction:column}.vid video{width:100%;max-width:260px}}
 </style></head><body><main>
-<h1>Historian</h1><p class="sub">Генерация и публикация постов в Threads</p>
+<h1>Historian</h1><p class="sub">Генерация и публикация постов в Threads<span id="ver"></span></p>
 
 <details class="card guide" id="guide"><summary>Как начать</summary>
 <ol>
@@ -76,7 +76,7 @@ table.stats tr.top td:first-child a{font-weight:600}
 поэтому материалы не повторяются внутри аккаунта. Новый аккаунт: кнопка «+ Добавить аккаунт».</li>
 <li><b>Опишите тему</b> в поле «О чём аккаунт»: о чём искать материал и какими должны быть посты (тон, формат, что важно).
 Чем подробнее, тем точнее попадание. ИИ пишет только на эту тему.</li>
-<li><b>Выберите ИИ</b> в «Настройках аккаунта». Если рядом написано «не установлен», выполните шаги под списком, а потом закройте и снова откройте Historian.bat.</li>
+<li><b>Выберите ИИ</b> в «Настройках аккаунта». Если рядом написано «не установлен», выполните шаги под списком, а потом закройте окно Historian и запустите его снова.</li>
 <li><b>Получите токен Threads</b> (для каждого аккаунта Threads свой):
 <ul>
 <li>Откройте <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> → <b>Create App</b> → сценарий <b>Access the Threads API</b> → создайте приложение. Одно приложение подходит для всех ваших аккаунтов.</li>
@@ -93,7 +93,7 @@ table.stats tr.top td:first-child a{font-weight:600}
 <li><b>Вставьте токен</b> в блок «Аккаунт Threads» и нажмите «Сохранить токен». ID определится сам, а продлевать токен бот будет сам.</li>
 <li>Нажмите <b>«Сгенерировать»</b>, прочитайте посты, при необходимости поправьте, затем <b>«Опубликовать»</b>.</li>
 <li><b>Видео для Shorts, TikTok и Reels</b> (по желанию): один раз установите FFmpeg. В PowerShell: <code>winget install Gyan.FFmpeg</code>,
-затем закройте и снова откройте Historian.bat. После этого у поста появится кнопка «Сделать видео». Фоновая музыка: положите mp3 в папку <code>music</code> рядом с Historian.bat.</li>
+затем закройте окно Historian и запустите его снова. После этого у поста появится кнопка «Сделать видео». Фоновая музыка: положите mp3 в папку <code>music</code> рядом с Historian.exe.</li>
 <li><b>Каждый день сам</b> (по желанию): поставьте галочку «Публиковать каждый день сам», выберите время,
 а в блоке «Расписание» внизу нажмите «Включить расписание» (один раз на все аккаунты).</li>
 </ol>
@@ -385,6 +385,7 @@ function renderSchedule(){
   const texts = {
     hourly: ['Включено: бот проверяет аккаунты каждый час, пока компьютер включён.', 'ok'],
     daily: ['Включено по старой схеме, раз в день в одно время. Нажмите «Обновить расписание», чтобы бот проверял все аккаунты каждый час.', 'err'],
+    other: ['Расписание запускает другую копию бота (через Python или Historian.exe из другой папки). Нажмите «Обновить расписание», чтобы его запускала эта.', 'err'],
     none: ['Расписание Windows не включено, поэтому бот публикует только по кнопке.', ''],
     unknown: ['Не удалось проверить расписание Windows.', ''],
   };
@@ -395,7 +396,7 @@ function renderSchedule(){
   const [text, cls] = texts[sc.status] || texts.unknown;
   say($('schedMsg'), text, cls);
   $('schedRow').style.display = sc.status === 'hourly' ? 'none' : '';
-  $('sched').textContent = sc.status === 'daily' ? 'Обновить расписание' : 'Включить расписание';
+  $('sched').textContent = ['daily', 'other'].includes(sc.status) ? 'Обновить расписание' : 'Включить расписание';
 }
 
 function num(n){return n == null ? '–' : n >= 10000 ? (n/1000).toFixed(n >= 100000 ? 0 : 1).replace('.0', '') + 'K' : String(n)}
@@ -472,6 +473,7 @@ async function refresh(){
   // пока ждали ответ, переключились на другой аккаунт или что-то сохранили: ответ устарел
   if(want !== cur || seen !== changes) return;
   const prev = st; st = s; limit = st.limit; cur = st.account.id;
+  $('ver').textContent = st.version ? ' · версия ' + st.version : '';
   renderTabs(); renderSchedule(); renderStats(); renderComments();
   if(shownAcc !== st.account.id){ shownAcc = st.account.id; renderAccount(); renderDraft(); renderStatus(); return; }
   syncToken(prev.account);

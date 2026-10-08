@@ -195,3 +195,32 @@ def test_image_source_setting():
     assert web.update_account(acc.id, {"image_source": "article+commons"})["image_source"] == "article+commons"
     with pytest.raises(ValueError, match="источник"):
         web.update_account(acc.id, {"image_source": "google"})
+
+
+def test_exe_schedules_itself(monkeypatch, tmp_path):
+    """Historian.exe говорит скрипту расписания, что запускать, и считает чужой задачу с другим путём."""
+    monkeypatch.setattr(web, "FROZEN", True)
+    monkeypatch.setattr(web.sys, "executable", r"C:\Bot's\Historian.exe")
+    args = web._install_args()
+    assert args[:2] == ["-File", web.TASK_SCRIPT] and os.path.exists(web.TASK_SCRIPT)
+    assert args[2:] == ["-Exe", r"C:\Bot's\Historian.exe", "-Root", str(tmp_path)]
+    assert web._runs_other_copy() == r"$t.Actions[0].Execute -ne 'C:\Bot''s\Historian.exe'"
+    monkeypatch.setattr(web, "FROZEN", False)
+    assert web._install_args() == ["-File", web.TASK_SCRIPT]
+
+
+def test_second_start_opens_the_running_window(monkeypatch):
+    busy = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+    opened = []
+    monkeypatch.setattr(web, "PORT", busy.server_address[1])
+    monkeypatch.setattr(web.webbrowser, "open", opened.append)
+    try:
+        web.run()  # порт занят: не падает и не запускает второй сервер
+    finally:
+        busy.server_close()
+    assert opened == [f"http://127.0.0.1:{busy.server_address[1]}/"]
+
+
+def test_state_reports_version(monkeypatch):
+    monkeypatch.setattr(web, "VERSION", "v1.7")
+    assert web.state(None)["version"] == "v1.7"

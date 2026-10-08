@@ -1,6 +1,6 @@
 """Окно бота в браузере: аккаунты Threads, у каждого свои настройки, черновик и публикация.
 
-Запуск: двойной клик по Historian.bat или `python -m historian.web`.
+Запуск: двойной клик по Historian.exe (или Historian.bat) либо `python -m historian.web`.
 Сервер слушает только 127.0.0.1, страница открывается в браузере сама.
 """
 import glob
@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -17,11 +18,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import accounts, comments, engines, history, images, main, stats, video, writer
+from .version import VERSION
 from .config import LANGUAGE, THREADS_LIMIT
 from .publishers import threads as threads_pub
 
 PORT = int(os.environ.get("HISTORIAN_PORT", "8765"))
 PAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
+TASK_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "install_task.ps1")
+FROZEN = getattr(sys, "frozen", False)  # запущен Historian.exe, а не Python
 TASK_NAME = "Historian bot"
 BUSY = ("generating", "publishing", "video")
 
@@ -154,7 +158,7 @@ def state(account_id: str | None) -> dict:
     acc_comments = {**comments.pending(acc), "loading": acc.id in comments_running}
     return {"accounts": summary, "account": acc.public(),
             "job": {**job, "elapsed": elapsed, "video": video_state(acc, job)}, "stats": acc_stats, "comments": acc_comments,
-            "engines": engines_info(), "schedule": schedule, "limit": THREADS_LIMIT}
+            "engines": engines_info(), "schedule": schedule, "limit": THREADS_LIMIT, "version": VERSION}
 
 
 def create_account(name: str) -> dict:
@@ -314,23 +318,40 @@ def _powershell(args: list[str], timeout: int = 120) -> subprocess.CompletedProc
                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def _runs_other_copy() -> str:
+    """Условие PowerShell: задача запускает другую копию бота. Для exe это Python или exe из другой папки,
+    для запуска через Python — Historian.exe."""
+    if FROZEN:
+        return "$t.Actions[0].Execute -ne '" + sys.executable.replace("'", "''") + "'"
+    return "$t.Actions[0].Execute -like '*Historian.exe'"
+
+
 def check_schedule() -> None:
-    """hourly — задача новой версии (каждый час), daily — старая (раз в день), none — не установлена."""
+    """hourly — задача новой версии (каждый час), daily — старая (раз в день), other — запускает другую копию
+    бота, none — не установлена."""
     if not schedule["supported"]:
         return
     script = (f"$t = Get-ScheduledTask -TaskName '{TASK_NAME}' -ErrorAction SilentlyContinue; "
-              "if (!$t) {'none'} elseif ($t.Triggers[0].Repetition.Interval) {'hourly'} else {'daily'}")
+              f"if (!$t) {{'none'}} elseif ({_runs_other_copy()}) {{'other'}} "
+              "elseif ($t.Triggers[0].Repetition.Interval) {'hourly'} else {'daily'}")
     try:
         out = _powershell(["-Command", script]).stdout.split()
-        schedule["status"] = out[-1] if out and out[-1] in ("none", "daily", "hourly") else "unknown"
+        schedule["status"] = out[-1] if out and out[-1] in ("none", "daily", "hourly", "other") else "unknown"
     except Exception:
         schedule["status"] = "unknown"
+
+
+def _install_args() -> list[str]:
+    args = ["-File", TASK_SCRIPT]
+    if FROZEN:  # скрипт лежит во временной папке exe, поэтому говорим ему, что запускать и где
+        args += ["-Exe", sys.executable, "-Root", os.getcwd()]
+    return args
 
 
 def install_schedule() -> dict:
     if not schedule["supported"]:
         raise ValueError("Расписание ставится только на Windows")
-    proc = _powershell(["-File", os.path.join("scripts", "install_task.ps1")])
+    proc = _powershell(_install_args())
     if proc.returncode != 0:
         raise RuntimeError(f"Не удалось включить расписание: {(proc.stderr or proc.stdout)[-800:]}")
     check_schedule()
@@ -477,14 +498,25 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": str(e)})
 
 
+class Server(ThreadingHTTPServer):
+    # На Windows SO_REUSEADDR пускает второй сервер на занятый порт, и неизвестно, какой из двух ответит
+    allow_reuse_address = os.name != "nt"
+
+
 def run() -> None:
     with open(PAGE_PATH, encoding="utf-8") as f:
         Handler.page = f.read()
+    url = f"http://127.0.0.1:{PORT}/"
+    try:
+        server = Server(("127.0.0.1", PORT), Handler)
+    except OSError:  # бот уже запущен: второй двойной клик просто открывает его окно
+        print(f"Historian уже работает: {url}")
+        webbrowser.open(url)
+        return
     accounts.ensure()  # при первом запуске переносит настройки из .env в accounts/main
     threading.Thread(target=_background_start, daemon=True).start()
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    url = f"http://127.0.0.1:{PORT}/"
-    print(f"Historian открыт: {url}\nНе закрывайте это окно, пока работаете с ботом.")
+    name = f"Historian {VERSION}" if VERSION else "Historian"
+    print(f"{name} открыт: {url}\nНе закрывайте это окно, пока работаете с ботом.")
     threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()

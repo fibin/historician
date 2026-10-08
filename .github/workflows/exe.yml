@@ -1,0 +1,90 @@
+name: Historian.exe
+
+# При каждом изменении main GitHub прогоняет тесты, собирает Historian.exe, проверяет, что он запускается,
+# и выкладывает новый релиз: https://github.com/fibin/historician/releases/latest
+# В pull request то же самое, но без релиза: exe можно скачать из артефактов запуска.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exe-${{ github.ref }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q tests
+
+  exe:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TAG: v1.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller
+      - name: Write version
+        shell: bash
+        run: echo "VERSION = \"$TAG\"" > historian/version.py
+      - run: pyinstaller --noconfirm Historian.spec
+      - name: Check that the exe starts
+        shell: pwsh
+        working-directory: dist
+        run: |
+          $p = Start-Process .\Historian.exe -PassThru
+          $page = $null
+          foreach ($i in 1..60) {
+            Start-Sleep -Seconds 2
+            try { $page = Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing -TimeoutSec 5; break } catch {}
+          }
+          $state = $null
+          if ($page) { $state = Invoke-RestMethod http://127.0.0.1:8765/api/state -TimeoutSec 60 }
+          Get-Process Historian -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not $page -or $page.Content -notmatch 'Historian') { throw "The bot window did not open" }
+          if ($state.version -ne $env:TAG) { throw "Wrong version in /api/state: $($state.version)" }
+          Write-Host "Window OK, version $($state.version), accounts: $($state.accounts.Count)"
+
+          $due = Start-Process .\Historian.exe -ArgumentList '--due' -PassThru
+          $null = $due.Handle
+          if (-not $due.WaitForExit(180000)) {
+            Get-Process Historian -ErrorAction SilentlyContinue | Stop-Process -Force
+            throw "--due did not finish"
+          }
+          Get-Content logs\*.log
+          if ($due.ExitCode -ne 0) { throw "--due exited with code $($due.ExitCode)" }
+          Write-Host "Scheduled run OK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Historian-${{ env.TAG }}
+          path: dist/Historian.exe
+      - name: Publish release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          **Как обновить.** Закройте окно Historian, скачайте `Historian.exe` ниже и положите его в папку бота
+          (туда, где лежит папка `accounts`), заменив старый. Затем запустите двойным щелчком.
+
+          При первом запуске Windows может написать «Система Windows защитила ваш компьютер»: exe не подписан
+          платным сертификатом. Нажмите «Подробнее» → «Выполнить в любом случае».
+
+          NOTES
+          gh release create "$TAG" dist/Historian.exe --target "$GITHUB_SHA" --title "Historian $TAG" \
+            --notes-file notes.md --generate-notes
