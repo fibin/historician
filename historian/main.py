@@ -41,8 +41,13 @@ def fit_story(story: dict, most: int | None = None) -> dict:
 def add_images(story: dict, source: str = images.DEFAULT_SOURCE) -> dict:
     """Варианты картинки (Wikimedia Commons и статьи-источники, в порядке из настроек аккаунта);
     первая выбрана, в окне можно сменить или убрать.
-    Последний запрос к Commons — сам предмет публикации: точные запросы ИИ иногда ничего не находят."""
+    Последний запрос к Commons — сам предмет публикации: точные запросы ИИ иногда ничего не находят.
+    Для выдуманной истории (креативный режим) картинку не ищут, а рисуют по описаниям от ИИ."""
     queries = list(story.get("image_queries") or [])
+    if story.get("creative"):
+        story["images"], story["image_note"] = images.generated(queries)
+        story["image"] = 0 if story["images"] else None
+        return story
     if history.subject_of(story) and history.subject_of(story) not in queries:
         queries.append(history.subject_of(story))
     story["images"], story["image_note"] = images.collect(queries, story.get("sources") or [], source)
@@ -81,6 +86,8 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
             print(f"[{attempt}] «{history.subject_of(story)}» уже был недавно, ищу другой материал", file=sys.stderr)
             continue
         story = fit_story(story, posts[1])
+        if creative:
+            story["creative"] = True  # для картинок и видео: история выдумана, искать нечего
         return add_images(story, image_source) if with_image else story
     raise RuntimeError("Не удалось найти новый материал: ИИ трижды предложил то, что уже было")
 

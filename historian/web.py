@@ -316,7 +316,10 @@ def find_image(account_id: str) -> dict:
         raise ValueError("Дождитесь, пока закончится текущая работа")
     if not job["story"] or not job["draft"] or job["published"]:
         raise ValueError("Картинку можно добавить только к неопубликованному черновику")
-    story = main.add_images(dict(job["story"]), acc.image_source)
+    story = dict(job["story"])
+    if acc.creative and not story.get("sources"):  # черновик выдуманной истории из версии до генерации картинок
+        story["creative"] = True
+    story = main.add_images(story, acc.image_source)
     main.save_draft(story, acc.out_dir, job["draft"])
     job["story"] = story
     return {"images": story["images"], "image": story["image"], "image_note": story["image_note"]}

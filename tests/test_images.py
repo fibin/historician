@@ -193,3 +193,30 @@ def test_collect_follows_account_order(monkeypatch):
     monkeypatch.setattr(images, "from_article", lambda url: None)
     found, note = images.collect(["q"], ["https://s"], "commons+article")
     assert found == [] and "ничего не нашлось" in note and "JPEG или PNG" in note
+
+
+def test_creative_story_draws_images_instead_of_searching(monkeypatch):
+    from historian import main
+
+    class Resp:
+        status_code = 200
+        headers = {"Content-Type": "image/jpeg"}
+        content = b"jpg"
+    asked = []
+    monkeypatch.setattr(images.requests, "get", lambda url, **kw: asked.append(url) or Resp())
+    monkeypatch.setattr(images, "search", lambda *a, **k: pytest.fail("в креативном режиме не ищем"))
+    story = main.add_images({"subject": "Дом", "creative": True, "sources": [],
+                             "image_queries": ["dark stairwell, film grain"]})
+    assert len(story["images"]) == images.GEN_OPTIONS and story["image"] == 0
+    img = story["images"][0]
+    assert img["url"].startswith(images.GENERATOR + "dark%20stairwell") and "seed=" in img["url"]
+    assert img["source"] == "generated" and images.credit(img) == ""
+    assert len({i["url"] for i in story["images"]}) == images.GEN_OPTIONS  # разные варианты
+
+
+def test_generation_failure_explains(monkeypatch):
+    def boom(url, **kw):
+        raise OSError("timeout")
+    monkeypatch.setattr(images.requests, "get", boom)
+    found, note = images.generated(["x"])
+    assert found == [] and "Pollinations" in note

@@ -143,7 +143,7 @@ table.stats tr.top td:first-child a{font-weight:600}
 <label style="margin-top:16px;color:var(--ink);font-size:15px">Постов в цепочке: от <input type="number" id="pmin" min="1" max="25" class="num"> до <input type="number" id="pmax" min="1" max="25" class="num"></label>
 <p class="hint">ИИ пишет столько постов, сколько нужно материалу, в этих пределах. Чтобы всегда был один пост, поставьте 1 и 1.</p>
 <label style="margin-top:16px;color:var(--ink);font-size:15px"><input type="checkbox" id="withImg">Картинка к первому посту</label>
-<label for="imgSrc">Откуда брать картинку</label>
+<div id="imgSrcBox"><label for="imgSrc">Откуда брать картинку</label>
 <select id="imgSrc">
 <option value="commons+article">Сначала Wikimedia Commons, потом из статьи</option>
 <option value="article+commons">Сначала из статьи, потом Wikimedia Commons</option>
@@ -151,7 +151,8 @@ table.stats tr.top td:first-child a{font-weight:600}
 <option value="article">Только из статьи</option>
 </select>
 <p class="hint">Wikimedia Commons: архивные фото, картины, карты со свободной лицензией, хорошо для истории.
-Из статьи: главная картинка страницы-источника, хорошо для новостей. Права на неё у издания, поэтому в конце цепочки бот подписывает сайт.</p>
+Из статьи: главная картинка страницы-источника, хорошо для новостей. Права на неё у издания, поэтому в конце цепочки бот подписывает сайт.</p></div>
+<p class="hint" id="genHint">В режиме «Придумывает свои истории» картинку не ищут, а рисуют: ИИ описывает сцену, бесплатный генератор Pollinations.ai рисует несколько вариантов, вы выбираете.</p>
 <label style="margin-top:16px;color:var(--ink);font-size:15px"><input type="checkbox" id="auto">Публиковать каждый день сам в <input type="time" id="time" style="margin-left:6px"></label>
 <p class="hint" id="autoHint"></p>
 <hr>
@@ -233,7 +234,7 @@ function renderAccount(){
   const a = st.account;
   $('name').value = a.name; $('theme').value = a.theme; $('lang').value = a.language;
   $('engine').innerHTML = st.engines.map(e => `<option value="${e.id}" ${e.id === a.engine ? 'selected' : ''}>${esc(e.label)}${e.available ? '' : ' (не установлен)'}</option>`).join('');
-  $('auto').checked = a.auto_publish; $('time').value = a.post_time; $('withImg').checked = a.with_image; $('mode').value = a.creative ? 'creative' : 'facts'; $('imgSrc').value = a.image_source;
+  $('auto').checked = a.auto_publish; $('time').value = a.post_time; $('withImg').checked = a.with_image; $('mode').value = a.creative ? 'creative' : 'facts'; imgMode(); $('imgSrc').value = a.image_source;
   $('pmin').value = a.posts_min; $('pmax').value = a.posts_max;
   engineNote(); autoHint(); say($('setMsg'), '');
   $('uid').value = a.threads_user_id; $('tok').value = ''; say($('saveMsg'), '');
@@ -274,7 +275,8 @@ $('theme').onchange = e => saveField('theme', e.target.value);
 $('lang').onchange = e => saveField('language', e.target.value);
 $('engine').onchange = e => saveField('engine', e.target.value);
 $('auto').onchange = e => saveField('auto_publish', e.target.checked);
-$('mode').onchange = e => saveField('creative', e.target.value === 'creative');
+function imgMode(){ const c = $('mode').value === 'creative'; $('imgSrcBox').hidden = c; $('genHint').hidden = !c; }
+$('mode').onchange = e => { imgMode(); saveField('creative', e.target.value === 'creative'); };
 $('withImg').onchange = e => saveField('with_image', e.target.checked);
 $('imgSrc').onchange = e => saveField('image_source', e.target.value);
 $('pmin').onchange = $('pmax').onchange = () => saveField({posts_min: $('pmin').value, posts_max: $('pmax').value});
@@ -308,10 +310,10 @@ function renderDraft(){
 function renderPic(){
   const s = st.job.story, opts = s.images || [], img = pic === null ? null : opts[pic];
   if(!opts.length){
-    $('pic').innerHTML = `<div class="row" style="margin:0 0 14px"><button class="ghost" id="picFind">Найти картинку</button>`
+    $('pic').innerHTML = `<div class="row" style="margin:0 0 14px"><button class="ghost" id="picFind">${s.creative || st.account.creative ? 'Нарисовать картинку' : 'Найти картинку'}</button>`
       + `<span class="status" id="picMsg">${esc(s.image_note || 'Картинки к этому черновику нет.')}</span></div>`;
     $('picFind').onclick = async () => {
-      $('picFind').disabled = true; $('picMsg').innerHTML = '<span class="spin"></span>Ищу картинку…';
+      $('picFind').disabled = true; $('picMsg').innerHTML = '<span class="spin"></span>' + (s.creative || st.account.creative ? 'Рисую картинку, это до пары минут…' : 'Ищу картинку…');
       try { const r = await api('/api/image/find', {id: st.account.id}); Object.assign(st.job.story, r); pic = r.image; renderPic(); }
       catch(e){ say($('picMsg'), e.message, 'err'); $('picFind').disabled = false; }
     };
@@ -319,7 +321,7 @@ function renderPic(){
   }
   $('pic').innerHTML = img
     ? `<div class="pic"><a href="${esc(img.page)}" target="_blank" rel="noopener"><img src="${esc(img.preview)}" alt=""></a>
-       <div class="cap"><b>${esc(img.title)}</b>${img.source === 'article' ? 'Из статьи · ' : ''}${esc([img.author, img.license].filter(Boolean).join(' · '))}
+       <div class="cap"><b>${esc(img.title)}</b>${img.source === 'article' ? 'Из статьи · ' : img.source === 'generated' ? 'Нарисовано Pollinations.ai' : ''}${esc([img.author, img.license].filter(Boolean).join(' · '))}
        ${img.attribution ? `<br>Подпись ${img.source === 'article' ? 'с сайтом' : 'с автором'} добавится в конец цепочки.` : ''}
        <div class="row">${opts.length > 1 ? `<button class="ghost" id="picNext">Другая (${pic + 1} из ${opts.length})</button>` : ''}<button class="ghost" id="picOff">Без картинки</button></div></div></div>`
     : `<div class="row" style="margin:0 0 14px"><button class="ghost" id="picOn">+ Картинка</button><span class="status">Пост выйдет без картинки</span></div>`;
