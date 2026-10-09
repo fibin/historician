@@ -64,9 +64,10 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
     used = history.used_subjects(entries)
     summary = history.summary_for_prompt(entries)
     feedback = stats.feedback_for_prompt(entries)
+    from . import engines
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        engines.check_stopped()
         if engine != "api":
-            from . import engines
             story = engines.generate_story(engine, summary, theme, language, feedback, posts=posts,
                                            creative=creative)
         else:
@@ -75,6 +76,7 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
                                        creative=creative)
             story["dossier"] = dossier
             story["engine"] = "api"
+        engines.check_stopped()  # Claude API по ключу не прервать на середине: ответ после «Остановить» выбрасываем
         if history.key(story) in used:
             print(f"[{attempt}] «{history.subject_of(story)}» уже был недавно, ищу другой материал", file=sys.stderr)
             continue

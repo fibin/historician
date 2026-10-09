@@ -241,3 +241,35 @@ def test_second_start_opens_the_running_window(monkeypatch):
 def test_state_reports_version(monkeypatch):
     monkeypatch.setattr(web, "VERSION", "v1.7")
     assert web.state(None)["version"] == "v1.7"
+
+
+def test_stop_generation_leaves_no_draft_and_frees_the_account(monkeypatch):
+    import time
+
+    acc = accounts.ensure()[0]
+    release = threading.Event()
+
+    def slow(acc):
+        release.wait(10)  # как Claude API: ответ приходит уже после «Остановить»
+        return dict(STORY)
+
+    monkeypatch.setattr(main, "generate_for", slow)
+    assert web._run(acc.id, "generating", lambda job: web.do_generate(acc.id, job))
+    assert web.stop_generation(acc.id)
+    job = web.state(acc.id)["job"]
+    assert job["status"] == "stopped" and job["story"] is None
+    assert not web.stop_generation(acc.id)  # второй раз останавливать нечего
+    release.set()
+    deadline = time.time() + 5
+    while acc.id in web.stoppers and time.time() < deadline:
+        time.sleep(0.02)
+    assert web.state(acc.id)["job"]["status"] == "stopped"
+    assert not os.path.exists(acc.out_dir) or not os.listdir(acc.out_dir)
+    assert acc.history() == []
+
+    monkeypatch.setattr(main, "generate_for", lambda acc: dict(STORY))  # после остановки можно генерировать снова
+    assert web._run(acc.id, "generating", lambda job: web.do_generate(acc.id, job))
+    deadline = time.time() + 5
+    while web.jobs[acc.id]["status"] == "generating" and time.time() < deadline:
+        time.sleep(0.02)
+    assert web.state(acc.id)["job"]["story"]["subject"] == "Тихо Браге"
