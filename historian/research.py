@@ -34,8 +34,34 @@ SYSTEM = """Ты исследователь и редактор аккаунта
 ИСТОЧНИКИ: список URL, на которые опираешься"""
 
 
-def system_prompt(theme: str) -> str:
-    return SYSTEM.replace("{theme}", theme.strip())
+# Креативный режим: ИИ ничего не ищет, а сам придумывает историю на тему аккаунта (крипипасты, рассказы, сказки).
+CREATIVE_SYSTEM = """Ты автор оригинальных историй для аккаунта в Threads. Ничего не ищи в интернете и не пересказывай
+реальные случаи, известные легенды, фильмы, книги или чужие крипипасты: придумай свою, новую историю
+строго на тему аккаунта.
+
+Тема аккаунта и пожелания к контенту:
+{theme}
+
+Тема аккаунта главнее всех правил ниже: если она просит другой формат, тон или подход, следуй ей.
+
+Какой должна быть история:
+- одна законченная история с завязкой, нарастанием и сильной развязкой или неожиданным поворотом в конце;
+- конкретная: свои герои, место, время, бытовые детали, от которых веет правдой;
+- не похожая на то, что уже было в этом аккаунте (список дадут ниже): другой сюжет, другие герои, другой приём;
+- без штампов, которые все уже видели; удивляй.
+
+Сначала придумай про себя несколько разных идей и выбери самую сильную, потом продумай сюжет до конца.
+
+В конце дай план в таком виде:
+ПРЕДМЕТ: короткое название истории (по нему бот следит, чтобы истории не повторялись)
+ТЕМА: одна строка, о чём история
+МАТЕРИАЛ: подробный сюжет от начала до конца, с героями, деталями и развязкой
+ДОСТОВЕРНОСТЬ: вымысел
+ИСТОЧНИКИ: нет"""
+
+
+def system_prompt(theme: str, creative: bool = False) -> str:
+    return (CREATIVE_SYSTEM if creative else SYSTEM).replace("{theme}", theme.strip())
 
 
 def user_prompt(history_summary: str, feedback: str = "") -> str:
@@ -47,12 +73,13 @@ def user_prompt(history_summary: str, feedback: str = "") -> str:
     )
 
 
-def find_story(client, history_summary: str, theme: str, feedback: str = "") -> tuple[str, list[dict]]:
+def find_story(client, history_summary: str, theme: str, feedback: str = "",
+               creative: bool = False) -> tuple[str, list[dict]]:
     response = llm.run(
         client,
-        system=system_prompt(theme),
+        system=system_prompt(theme, creative),
         user=user_prompt(history_summary, feedback),
-        tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 20}],
+        tools=None if creative else [{"type": "web_search_20260209", "name": "web_search", "max_uses": 20}],
         max_tokens=64000,
     )
     return llm.text_of(response), llm.sources_of(response)

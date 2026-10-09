@@ -64,7 +64,7 @@ def test_feedback_reaches_the_prompt(monkeypatch):
     from historian import engines, main
     seen = {}
 
-    def fake(engine, summary, theme, language, feedback="", posts=(1, 10)):
+    def fake(engine, summary, theme, language, feedback="", posts=(1, 10), creative=False):
         seen["feedback"] = feedback
         return {"subject": "X", "topic": "t", "threads_posts": ["p"], "sources": [], "engine": engine}
     monkeypatch.setattr(engines, "generate_story", fake)
