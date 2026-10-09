@@ -180,7 +180,7 @@ def test_posts_per_chain_setting_reaches_the_prompt(monkeypatch):
     assert "один пост, без цепочки" in writer.system_prompt("t", "uk", (1, 1))
     seen = {}
 
-    def fake(engine, summary, theme, language, feedback="", posts=(1, 10)):
+    def fake(engine, summary, theme, language, feedback="", posts=(1, 10), creative=False):
         seen["posts"] = posts
         return {"subject": "X", "topic": "t", "threads_posts": ["a", "b", "c", "d", "e", "f"], "sources": []}
     monkeypatch.setattr(engines, "generate_story", fake)
@@ -195,6 +195,23 @@ def test_image_source_setting():
     assert web.update_account(acc.id, {"image_source": "article+commons"})["image_source"] == "article+commons"
     with pytest.raises(ValueError, match="источник"):
         web.update_account(acc.id, {"image_source": "google"})
+
+
+def test_creative_mode_setting_reaches_the_engine(monkeypatch):
+    from historian import engines
+    acc = accounts.ensure()[0]
+    assert web.update_account(acc.id, {})["creative"] is False  # по умолчанию ищет реальные истории
+    assert web.update_account(acc.id, {"creative": True})["creative"] is True
+    seen = {}
+
+    def fake(engine, summary, theme, language, feedback="", posts=(1, 10), creative=False):
+        seen["creative"] = creative
+        return {"subject": "X", "topic": "t", "threads_posts": ["a"], "sources": []}
+    monkeypatch.setattr(engines, "generate_story", fake)
+    acc = accounts.get(acc.id)
+    acc.theme = "крипипасты"
+    main.generate(acc.engine, [], acc.theme, with_image=False, creative=acc.creative)
+    assert seen["creative"] is True
 
 
 def test_exe_schedules_itself(monkeypatch, tmp_path):

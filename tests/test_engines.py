@@ -45,6 +45,27 @@ def test_claude_code_reads_structured_output(fake):
     assert not any(k in system for k in ("{theme}", "{language}", "{max_len}"))
 
 
+def test_creative_mode_invents_without_search(fake):
+    calls = fake(stdout=json.dumps({"is_error": False, "structured_output": {**STORY, "sources": []}}))
+    engines.generate_story("claude-code", "-", "крипипасты", "українська", creative=True)
+    cmd = calls["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == "" and "--allowedTools" not in cmd
+    system = cmd[cmd.index("--system-prompt") + 1]
+    assert "придумай свою" in system and "Ничего не ищи" in system and "без выдумок" not in system
+    assert "ссылкой на главный источник" not in system and "Тема аккаунта и пожелания к контенту:\nкрипипасты" in system
+    assert not any("{" + k + "}" in system for k in ("truth", "ending", "sources", "theme"))
+
+    calls = fake(write=json.dumps(STORY, ensure_ascii=False))
+    engines.generate_story("codex", "-", "t", "uk", creative=True)
+    assert "--search" not in calls["cmd"]
+
+
+def test_facts_mode_keeps_sources(fake):
+    system = engines.system_prompt("t", "uk")
+    assert "без выдумок" in system and "ссылкой на главный источник" in system and "Ты исследователь" in system
+    assert not any("{" + k + "}" in system for k in ("truth", "ending", "sources"))
+
+
 def test_codex_uses_search_schema_and_reads_last_message(fake):
     calls = fake(write=json.dumps(STORY, ensure_ascii=False))
     story = engines.generate_story("codex", "-", "тема", "українська")

@@ -3,6 +3,7 @@
 claude-code, codex и gemini работают через консольные программы, вошедшие в вашу подписку
 (Claude, ChatGPT, аккаунт Google), поэтому ключ API не нужен. api — Claude API по ключу.
 Всем движкам дают одни и те же промпты (research + writer, с темой и языком аккаунта) и одну схему ответа.
+В креативном режиме аккаунта ИИ не ищет в интернете, а придумывает историю сам.
 """
 import json
 import os
@@ -20,11 +21,12 @@ SCHEMA = {
 }
 
 
-def system_prompt(theme: str, language: str, posts: tuple[int, int] = writer.DEFAULT_POSTS) -> str:
+def system_prompt(theme: str, language: str, posts: tuple[int, int] = writer.DEFAULT_POSTS,
+                  creative: bool = False) -> str:
     return (
-        research.system_prompt(theme)
+        research.system_prompt(theme, creative)
         + "\n\n---\nКогда досье готово, сам напиши по нему посты.\n\n"
-        + writer.system_prompt(theme, language, posts)
+        + writer.system_prompt(theme, language, posts, creative)
         + "\n\nВ поле dossier положи досье целиком (в формате выше)."
     )
 
@@ -176,8 +178,10 @@ def ask(engine: str, system: str, user: str, schema: dict, search: bool = False,
 
 
 def generate_story(engine: str, history_summary: str, theme: str, language: str, feedback: str = "",
-                   timeout: int = 1800, posts: tuple[int, int] = writer.DEFAULT_POSTS) -> dict:
-    story = _validate(ask(engine, system_prompt(theme, language, posts), _user_prompt(history_summary, feedback),
-                          SCHEMA, search=True, timeout=timeout))
+                   timeout: int = 1800, posts: tuple[int, int] = writer.DEFAULT_POSTS,
+                   creative: bool = False) -> dict:
+    """creative: придумать свою историю, без поиска в интернете."""
+    story = _validate(ask(engine, system_prompt(theme, language, posts, creative),
+                          _user_prompt(history_summary, feedback), SCHEMA, search=not creative, timeout=timeout))
     story["engine"] = engine
     return story

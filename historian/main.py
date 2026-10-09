@@ -52,9 +52,9 @@ def add_images(story: dict, source: str = images.DEFAULT_SOURCE) -> dict:
 
 def generate(engine: str, entries: list[dict], theme: str, language: str = LANGUAGE,
              with_image: bool = True, posts: tuple[int, int] = writer.DEFAULT_POSTS,
-             image_source: str = images.DEFAULT_SOURCE) -> dict:
+             image_source: str = images.DEFAULT_SOURCE, creative: bool = False) -> dict:
     """engine: claude-code / codex / gemini — через подписку (см. engines.py), api — Claude API по ключу.
-    posts: сколько постов в цепочке, от и до."""
+    posts: сколько постов в цепочке, от и до. creative: ИИ придумывает историю сам, без поиска и источников."""
     if not theme.strip():
         raise SystemExit("Опишите в настройках аккаунта, о чём он: без темы ИИ не знает, что искать")
     client = None
@@ -67,10 +67,12 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
     for attempt in range(1, MAX_ATTEMPTS + 1):
         if engine != "api":
             from . import engines
-            story = engines.generate_story(engine, summary, theme, language, feedback, posts=posts)
+            story = engines.generate_story(engine, summary, theme, language, feedback, posts=posts,
+                                           creative=creative)
         else:
-            dossier, urls = research.find_story(client, summary, theme, feedback)
-            story = writer.write_posts(client, dossier, urls, theme, language, feedback, posts=posts)
+            dossier, urls = research.find_story(client, summary, theme, feedback, creative)
+            story = writer.write_posts(client, dossier, urls, theme, language, feedback, posts=posts,
+                                       creative=creative)
             story["dossier"] = dossier
             story["engine"] = "api"
         if history.key(story) in used:
@@ -84,7 +86,7 @@ def generate(engine: str, entries: list[dict], theme: str, language: str = LANGU
 def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
     stats.refresh(acc)  # свежие цифры, чтобы ИИ видел, что заходит
     return generate(engine or acc.engine, acc.history(), acc.theme, acc.language, acc.with_image,
-                    (acc.posts_min, acc.posts_max), acc.image_source)
+                    (acc.posts_min, acc.posts_max), acc.image_source, acc.creative)
 
 
 def publish(story: dict, creds: ThreadsCredentials | None) -> dict:

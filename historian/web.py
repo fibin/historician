@@ -200,6 +200,8 @@ def update_account(account_id: str, data: dict) -> dict:
         if data["image_source"] not in images.SOURCES:
             raise ValueError("Неизвестный источник картинок")
         acc.image_source = data["image_source"]
+    if "creative" in data:
+        acc.creative = bool(data["creative"])
     if "with_image" in data:
         acc.with_image = bool(data["with_image"])
     if "auto_publish" in data:

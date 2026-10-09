@@ -127,6 +127,12 @@ table.stats tr.top td:first-child a{font-weight:600}
 <label for="theme">О чём аккаунт</label>
 <textarea id="theme" class="theme" placeholder="Например: неочевидные факты о космосе простым языком, с цифрами и сравнениями. Или: короткие практичные советы по продуктивности, один приём на пост, с примером из жизни."></textarea>
 <p class="hint">О чём искать материал и какими должны быть посты: тон, формат, что важно. ИИ пишет только на эту тему. Поля сохраняются сами, когда вы переходите к другому.</p>
+<label for="mode">Откуда берутся истории</label>
+<select id="mode">
+<option value="facts">Ищет реальные истории и факты с источниками</option>
+<option value="creative">Придумывает свои истории (креатив, без поиска)</option>
+</select>
+<p class="hint">Для крипипаст, рассказов, сказок выберите «Придумывает свои»: ИИ не ищет в интернете, а сочиняет новую историю на тему аккаунта, без ссылок на источники.</p>
 <div class="two">
 <div><label for="lang">Язык постов</label>
 <input id="lang" list="langs" autocomplete="off">
@@ -227,7 +233,7 @@ function renderAccount(){
   const a = st.account;
   $('name').value = a.name; $('theme').value = a.theme; $('lang').value = a.language;
   $('engine').innerHTML = st.engines.map(e => `<option value="${e.id}" ${e.id === a.engine ? 'selected' : ''}>${esc(e.label)}${e.available ? '' : ' (не установлен)'}</option>`).join('');
-  $('auto').checked = a.auto_publish; $('time').value = a.post_time; $('withImg').checked = a.with_image; $('imgSrc').value = a.image_source;
+  $('auto').checked = a.auto_publish; $('time').value = a.post_time; $('withImg').checked = a.with_image; $('mode').value = a.creative ? 'creative' : 'facts'; $('imgSrc').value = a.image_source;
   $('pmin').value = a.posts_min; $('pmax').value = a.posts_max;
   engineNote(); autoHint(); say($('setMsg'), '');
   $('uid').value = a.threads_user_id; $('tok').value = ''; say($('saveMsg'), '');
@@ -268,6 +274,7 @@ $('theme').onchange = e => saveField('theme', e.target.value);
 $('lang').onchange = e => saveField('language', e.target.value);
 $('engine').onchange = e => saveField('engine', e.target.value);
 $('auto').onchange = e => saveField('auto_publish', e.target.checked);
+$('mode').onchange = e => saveField('creative', e.target.value === 'creative');
 $('withImg').onchange = e => saveField('with_image', e.target.checked);
 $('imgSrc').onchange = e => saveField('image_source', e.target.value);
 $('pmin').onchange = $('pmax').onchange = () => saveField({posts_min: $('pmin').value, posts_max: $('pmax').value});

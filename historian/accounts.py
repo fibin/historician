@@ -47,6 +47,7 @@ class Account:
     auto_publish: bool = False
     with_image: bool = True   # подбирать картинку к первому посту
     image_source: str = "commons+article"  # откуда: см. images.SOURCES
+    creative: bool = False    # придумывать свои истории вместо поиска реальных с источниками
     posts_min: int = 1        # сколько постов в цепочке: от и до
     posts_max: int = 10
     threads_user_id: str = ""
