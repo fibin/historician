@@ -11,6 +11,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+from contextlib import contextmanager
 
 from . import research, writer
 
@@ -76,17 +78,94 @@ def _user_prompt(history_summary: str, feedback: str = "") -> str:
     return research.user_prompt(history_summary, feedback) + "\n\nКогда досье готово, напиши посты."
 
 
+class Stopped(Exception):
+    """Генерацию остановили кнопкой в окне."""
+
+
+class Stopper:
+    """Кнопка «Остановить» для одной генерации: помечает её остановленной и закрывает запущенные программы ИИ."""
+
+    def __init__(self):
+        self.stopped = False
+        self._procs: set[subprocess.Popen] = set()
+        self._lock = threading.Lock()
+
+    def stop(self) -> None:
+        with self._lock:
+            self.stopped = True
+            procs = list(self._procs)
+        for proc in procs:
+            _kill(proc)
+
+    def _add(self, proc: subprocess.Popen) -> None:
+        with self._lock:
+            self._procs.add(proc)
+            stopped = self.stopped
+        if stopped:
+            _kill(proc)
+
+    def _discard(self, proc: subprocess.Popen) -> None:
+        with self._lock:
+            self._procs.discard(proc)
+
+
+_local = threading.local()
+
+
+@contextmanager
+def stoppable(stopper: Stopper):
+    """Всё, что поток запускает внутри with, можно остановить через stopper.stop()."""
+    _local.stopper = stopper
+    try:
+        yield stopper
+    finally:
+        _local.stopper = None
+
+
+def check_stopped() -> None:
+    stopper = getattr(_local, "stopper", None)
+    if stopper and stopper.stopped:
+        raise Stopped("Генерация остановлена")
+
+
+def _kill(proc: subprocess.Popen) -> None:
+    """Закрывает программу вместе с дочерними: на Windows claude/codex/gemini запускают node через .cmd."""
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
 def _run(cmd: list[str], stdin: str, timeout: int) -> str:
     # Длинный текст идёт через stdin, а в аргументах только короткие строки:
     # на Windows npm-программы запускаются через .cmd, и cmd.exe портит сложные аргументы.
     # CREATE_NO_WINDOW: при запуске по расписанию (pythonw) не открывать окно консоли.
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=timeout, creationflags=flags)
+    check_stopped()
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", errors="replace", creationflags=flags)
+    stopper = getattr(_local, "stopper", None)
+    if stopper:
+        stopper._add(proc)
+    try:
+        stdout, stderr = proc.communicate(stdin, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill(proc)
+        proc.communicate()
+        raise
+    finally:
+        if stopper:
+            stopper._discard(proc)
+    check_stopped()
     if proc.returncode != 0:
         raise RuntimeError(f"{os.path.basename(cmd[0])} завершился с кодом {proc.returncode}: "
-                           f"{(proc.stderr or proc.stdout)[-2000:]}")
-    return proc.stdout
+                           f"{(stderr or stdout)[-2000:]}")
+    return stdout
 
 
 def _parse_json_reply(text: str) -> dict:

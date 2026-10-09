@@ -103,7 +103,7 @@ table.stats tr.top td:first-child a{font-weight:600}
 <div class="newacc" id="newAcc"><input id="newName" placeholder="Название, например «Наука»" autocomplete="off"><button id="createAcc">Создать</button><button class="ghost" id="cancelAcc">Отмена</button></div>
 
 <section class="card"><h2>Пост дня</h2>
-<div class="row" style="margin-top:0"><button id="gen">Сгенерировать</button><span id="genMsg" class="status"></span></div>
+<div class="row" style="margin-top:0"><button id="gen">Сгенерировать</button><button class="ghost" id="stopGen" hidden>Остановить</button><span id="genMsg" class="status"></span></div>
 <div id="draft" style="margin-top:16px"></div>
 </section>
 
@@ -373,10 +373,12 @@ function renderStatus(){
   const j = st.job, busy = ['generating', 'publishing', 'video'].includes(j.status);
   const noTheme = !st.account.theme.trim();
   $('gen').disabled = busy || noTheme;
+  $('stopGen').hidden = j.status !== 'generating'; $('stopGen').disabled = false;
   if($('pub')) $('pub').disabled = busy || !st.account.has_token;
   const g = $('genMsg'), p = $('pubMsg');
   say(g, ''); if(p) say(p, '');
   if(j.status === 'generating') g.innerHTML = `<span class="spin"></span>Ищу материал и пишу посты… ${mmss(j.elapsed)}`;
+  else if(j.status === 'stopped') say(g, 'Генерация остановлена, черновик не сохранён.');
   else if(noTheme && !busy) say(g, 'Сначала опишите в настройках ниже, о чём аккаунт.');
   else if(j.status === 'publishing' && p) p.innerHTML = `<span class="spin"></span>Публикую…`;
   else if(j.status === 'error' && j.action !== 'video') say((p && j.story) ? p : g, j.message, 'err');
@@ -498,6 +500,11 @@ async function publish(){
 $('gen').onclick = async () => {
   if(st.job.story && !st.job.published && !confirm('Текущий черновик не опубликован. Сгенерировать новый?')) return;
   try { editing = false; await api('/api/generate', {id: st.account.id}); await refresh(); }
+  catch(e){ say($('genMsg'), e.message, 'err'); }
+};
+$('stopGen').onclick = async () => {
+  $('stopGen').disabled = true;
+  try { await api('/api/generate/stop', {id: st.account.id}); await refresh(); }
   catch(e){ say($('genMsg'), e.message, 'err'); }
 };
 $('save').onclick = async () => {

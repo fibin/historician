@@ -15,20 +15,24 @@ def fake(monkeypatch):
     def install(stdout="", write=None):
         class Proc:
             returncode = 0
-            stderr = ""
+            pid = 1
 
-        def run(cmd, input, **kw):
-            calls["cmd"], calls["input"] = cmd, input
-            if write:
-                out = cmd[cmd.index("-o") + 1]
-                with open(out, "w", encoding="utf-8") as f:
-                    f.write(write)
-            p = Proc()
-            p.stdout = stdout
-            return p
+            def __init__(self, cmd, **kw):
+                self.cmd = cmd
+
+            def communicate(self, input=None, timeout=None):
+                calls["cmd"], calls["input"] = self.cmd, input
+                if write:
+                    out = self.cmd[self.cmd.index("-o") + 1]
+                    with open(out, "w", encoding="utf-8") as f:
+                        f.write(write)
+                return stdout, ""
+
+            def poll(self):
+                return 0
 
         monkeypatch.setattr(engines.shutil, "which", lambda name: f"/usr/bin/{name}")
-        monkeypatch.setattr(engines.subprocess, "run", run)
+        monkeypatch.setattr(engines.subprocess, "Popen", Proc)
         return calls
     return install
 
@@ -96,3 +100,37 @@ def test_missing_program_explains_setup(monkeypatch):
     monkeypatch.delenv("CODEX_BIN", raising=False)
     with pytest.raises(SystemExit, match="codex"):
         engines.generate_story("codex", "-", "тема", "українська")
+
+
+def test_stop_kills_the_running_ai_and_discards_its_answer(tmp_path):
+    """Кнопка «Остановить» закрывает настоящую программу ИИ, а не ждёт её ответа."""
+    import sys
+    import threading
+    import time
+
+    stopper = engines.Stopper()
+    result = {}
+
+    def worker():
+        with engines.stoppable(stopper):
+            try:
+                engines._run([sys.executable, "-c", "import time; time.sleep(60)"], "", timeout=120)
+            except engines.Stopped as e:
+                result["stopped"] = e
+
+    t = threading.Thread(target=worker)
+    started = time.time()
+    t.start()
+    while not stopper._procs and time.time() - started < 10:
+        time.sleep(0.05)
+    stopper.stop()
+    t.join(10)
+    assert not t.is_alive() and "stopped" in result and time.time() - started < 10
+
+
+def test_stopped_before_start_runs_nothing(monkeypatch):
+    stopper = engines.Stopper()
+    stopper.stop()
+    monkeypatch.setattr(engines.subprocess, "Popen", lambda *a, **kw: pytest.fail("не должен запускаться"))
+    with engines.stoppable(stopper), pytest.raises(engines.Stopped):
+        engines._run(["claude"], "", timeout=1)

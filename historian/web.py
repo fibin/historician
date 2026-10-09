@@ -34,6 +34,7 @@ jobs: dict[str, dict] = {}  # по id аккаунта: что сейчас пр
 schedule = {"supported": os.name == "nt", "status": "unknown"}
 stats_running: set[str] = set()  # аккаунты, для которых сейчас запрашиваем статистику
 comments_running: set[str] = set()  # аккаунты, где сейчас ищем комментарии и пишем черновики ответов
+stoppers: dict[str, engines.Stopper] = {}  # по id аккаунта: кнопка «Остановить» для текущей работы
 
 
 def _published_entry(acc: accounts.Account, story: dict) -> dict | None:
@@ -243,28 +244,54 @@ def save_token(account_id: str, user_id: str, token: str) -> dict:
 
 def _run(account_id: str, status: str, job_fn) -> bool:
     job = job_for(accounts.get(account_id))
+    stopper = engines.Stopper()
     with _lock:
         if job["status"] in BUSY:
             return False
         job.update(status=status, action=status, message="", started=time.time())
+        stoppers[account_id] = stopper
 
     def worker():
         try:
-            job_fn(job)
-            job.update(status="idle")
+            with engines.stoppable(stopper):
+                job_fn(job)
+            result = {"status": "idle"}
+        except engines.Stopped:
+            result = None
         except BaseException as e:  # SystemExit из main тоже показываем пользователю
             traceback.print_exc()
-            job.update(status="error", message=str(e) or e.__class__.__name__)
+            result = {"status": "error", "message": str(e) or e.__class__.__name__}
+        with _lock:
+            # остановленная работа ничего не меняет: окно уже показывает «Остановлено» или новую работу
+            if result and not stopper.stopped:
+                job.update(result)
+            if stoppers.get(account_id) is stopper:
+                del stoppers[account_id]
 
     threading.Thread(target=worker, daemon=True).start()
+    return True
+
+
+def stop_generation(account_id: str) -> bool:
+    """Кнопка «Остановить»: закрывает программу ИИ, черновик не сохраняется, журнал и лимиты не трогаем."""
+    job = job_for(accounts.get(account_id))
+    with _lock:
+        stopper = stoppers.get(account_id)
+        if job["status"] != "generating" or not stopper:
+            return False
+        stopper.stopped = True
+        job.update(status="stopped", message="")
+    stopper.stop()
     return True
 
 
 def do_generate(account_id: str, job: dict) -> None:
     acc = accounts.get(account_id)
     story = main.generate_for(acc)
-    path = main.save_draft(story, acc.out_dir)
-    job.update(story=story, draft=path, published=False, link=None)
+    with _lock:  # проверка и сохранение вместе, чтобы «Остановить» не проскочило между ними
+        engines.check_stopped()
+        path = main.save_draft(story, acc.out_dir)
+        job.update(story=story, draft=path, published=False, link=None)
 
 
 def do_publish(account_id: str, job: dict, posts: list[str], image: int | None = None) -> None:
@@ -451,6 +478,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/generate":
                 ok = _run(acc_id, "generating", lambda job: do_generate(acc_id, job))
                 return self._send(200 if ok else 409, {"ok": ok})
+            if self.path == "/api/generate/stop":
+                return self._send(200, {"ok": stop_generation(acc_id)})
             if self.path == "/api/publish":
                 posts = [p.strip() for p in body.get("posts", []) if p.strip()]
                 acc = accounts.get(acc_id)
