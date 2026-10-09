@@ -210,8 +210,14 @@ def test_creative_mode_setting_reaches_the_engine(monkeypatch):
     monkeypatch.setattr(engines, "generate_story", fake)
     acc = accounts.get(acc.id)
     acc.theme = "крипипасты"
-    main.generate(acc.engine, [], acc.theme, with_image=False, creative=acc.creative)
-    assert seen["creative"] is True
+    story = main.generate(acc.engine, [], acc.theme, with_image=False, creative=acc.creative)
+    assert seen["creative"] is True and story["creative"] is True
+    from historian import video
+    captured = {}
+    monkeypatch.setattr(engines, "ask", lambda engine, system, *a, **k: captured.setdefault("s", system) and {})
+    with pytest.raises(RuntimeError):  # пустой ответ: сценария нет, нам важен только промпт
+        video.write_script(story, "claude-code", "t", "uk")
+    assert "генератора изображений" in captured["s"] and "Wikimedia" not in captured["s"] and "{facts}" not in captured["s"]
 
 
 def test_exe_schedules_itself(monkeypatch, tmp_path):

@@ -5,12 +5,17 @@
 - Статья-источник: главная картинка страницы (og:image), та же, что видна в превью ссылки. Подходит для новостей
   и свежих тем, которых нет на Commons. Права на неё у издания, поэтому бот всегда подписывает сайт.
 
+В креативном режиме аккаунта картинку не ищут, а рисуют: бесплатный генератор Pollinations.ai (без ключа и
+регистрации) рисует по описанию от ИИ, и картинка доступна по ссылке, как и найденные.
+
 Threads сам скачивает картинку по ссылке, поэтому хранить файлы у себя не нужно.
 """
 import html
+import random
 import re
 import sys
-from urllib.parse import urljoin, urlparse
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote, urlencode, urljoin, urlparse
 
 import requests
 
@@ -171,6 +176,45 @@ def collect(queries: list[str], article_urls: list[str], source: str = DEFAULT_S
         if note:
             notes.append(note)
     return found[:OPTIONS], ("" if found else " ".join(notes))
+
+
+GENERATOR = "https://image.pollinations.ai/prompt/"
+GEN_SIZE = (1080, 1350)  # 4:5, так Threads показывает картинку крупнее всего
+GEN_OPTIONS = 3
+GEN_TIMEOUT = 150        # генератор рисует до пары минут, особенно когда занят
+
+
+def generate_url(prompt: str, seed: int) -> str:
+    w, h = GEN_SIZE
+    params = urlencode({"width": w, "height": h, "seed": seed, "nologo": "true", "model": "flux"})
+    return f"{GENERATOR}{quote(prompt.strip()[:600], safe='')}?{params}"
+
+
+def _draw(prompt: str, seed: int) -> dict | None:
+    """Рисует картинку и проверяет, что она готова: генератор запоминает её, и Threads потом получит ту же."""
+    url = generate_url(prompt, seed)
+    try:
+        r = requests.get(url, headers={"User-Agent": UA}, timeout=GEN_TIMEOUT)
+        kind = r.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if r.status_code != 200 or kind not in ("image/jpeg", "image/png") or len(r.content) > MAX_BYTES:
+            raise RuntimeError(f"ответ {r.status_code} {kind}")
+    except Exception as e:
+        print(f"Не удалось нарисовать картинку «{prompt[:80]}»: {e}", file=sys.stderr)
+        return None
+    return {"url": url, "preview": url, "page": url, "title": prompt.strip()[:150], "author": "",
+            "license": "", "attribution": False, "source": "generated"}
+
+
+def generated(prompts: list[str], want: int = GEN_OPTIONS) -> tuple[list[dict], str]:
+    """Варианты нарисованной картинки по описаниям от ИИ (по кругу, с разными seed) и объяснение, если не вышло."""
+    prompts = [p.strip() for p in prompts if p and p.strip()]
+    if not prompts:
+        return [], "ИИ не описал картинку."
+    jobs = [(prompts[i % len(prompts)], random.randint(1, 10**9)) for i in range(want)]
+    with ThreadPoolExecutor(max_workers=want) as pool:
+        found = [img for img in pool.map(lambda job: _draw(*job), jobs) if img]
+    return found, ("" if found else "Генератор картинок Pollinations.ai сейчас не ответил. "
+                                    "Попробуйте ещё раз кнопкой или опубликуйте без картинки.")
 
 
 def chosen(story: dict) -> dict | None:

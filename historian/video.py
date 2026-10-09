@@ -37,10 +37,7 @@ SCRIPT_SYSTEM = """Ты сценарист коротких вертикальн
   Не начинай с «Знаете ли вы», с даты или с «Сегодня расскажу».
 - Дальше 3–5 сцен, в каждой одна мысль. Короткие фразы для чтения вслух: без скобок, ссылок, эмодзи, сокращений.
 - Последняя сцена — короткий вывод или вопрос зрителям, на который хочется ответить в комментариях.
-- Только факты из публикации, ничего не выдумывай. Спорное так и называй спорным.
-
-Для каждой сцены image_query: что показать в кадре, поисковый запрос на английском для Wikimedia Commons
-(портрет человека, место, здание, предмет, гравюра, карта, картина о событии). Конкретно: имя или название + что именно.
+{facts}
 title: название видео до 70 символов на языке видео, интригующее, без кликбейта.
 description: одно-два предложения под видео на языке видео и 3–5 хештегов."""
 
@@ -103,8 +100,20 @@ def duration(path: str) -> float:
 
 # --- сценарий -----------------------------------------------------------------------------------------
 
+FACTS = """- Только факты из публикации, ничего не выдумывай. Спорное так и называй спорным.
+
+Для каждой сцены image_query: что показать в кадре, поисковый запрос на английском для Wikimedia Commons
+(портрет человека, место, здание, предмет, гравюра, карта, картина о событии). Конкретно: имя или название + что именно."""
+# Выдуманная история (креативный режим): кадры рисует генератор, поэтому вместо запросов — описания картинок.
+CREATIVE = """- Это выдуманная история: пересказывай её, держи напряжение, ничего не добавляй сверх публикации.
+
+Для каждой сцены image_query: описание кадра на английском для генератора изображений, 1–2 предложения:
+что в кадре, настроение, свет, стиль. Все кадры в одном стиле, без текста на картинке, без реальных известных людей."""
+
+
 def write_script(story: dict, engine: str, theme: str, language: str) -> dict:
-    system = SCRIPT_SYSTEM.replace("{theme}", theme.strip()).replace("{language}", language.strip())
+    system = (SCRIPT_SYSTEM.replace("{facts}", CREATIVE if story.get("creative") else FACTS)
+              .replace("{theme}", theme.strip()).replace("{language}", language.strip()))
     user = (f"Публикация: {story.get('subject', '')} — {story.get('topic', '')}\n\n"
             + "\n\n".join(story["threads_posts"]))
     script = engines.ask(engine, system, user, SCHEMA)
@@ -142,11 +151,15 @@ def speak(text: str, voice: str, path: str) -> list[tuple[float, float, str]]:
 
 # --- кадры --------------------------------------------------------------------------------------------
 
-def pick_images(scenes: list[dict], fallback: list[dict]) -> list[dict | None]:
-    """Картинка на каждую сцену: по запросу сцены, иначе из вариантов поста, иначе предыдущая."""
+def pick_images(scenes: list[dict], fallback: list[dict], creative: bool = False) -> list[dict | None]:
+    """Картинка на каждую сцену: по запросу сцены, иначе из вариантов поста, иначе предыдущая.
+    creative: кадры не ищутся, а рисуются генератором."""
     used, out = set(), []
     for scene in scenes:
-        options = images.find([scene.get("image_query", "")], want=4)
+        if creative:
+            options = images.generated([scene.get("image_query", "")], want=1)[0]
+        else:
+            options = images.find([scene.get("image_query", "")], want=4)
         img = next((i for i in options if i["page"] not in used), None)
         img = img or next((i for i in fallback if i["page"] not in used), None) or (out[-1] if out else None)
         if img:
@@ -259,7 +272,7 @@ def _music() -> str | None:
 def _description(script: dict, pics: list[dict | None]) -> str:
     credits = []
     for img in pics:
-        if img and img["page"] not in {c[0] for c in credits}:
+        if img and img.get("source") != "generated" and img["page"] not in {c[0] for c in credits}:
             who = ", ".join(x for x in (img.get("author"), img.get("license")) if x)
             credits.append((img["page"], f"{who}: {img['page']}" if who else img["page"]))
     text = f"{script['title']}\n\n{script['description']}"
@@ -290,7 +303,7 @@ def make(story: dict, engine: str, theme: str, language: str, out_path: str, pro
         _ff(["-f", "concat", "-safe", "0", "-i", "audio.txt", "-c:a", "aac", "-b:a", "160k", "voice.m4a"], cwd=tmp)
 
         progress("Подбираю кадры")
-        pics = pick_images(scenes, story.get("images") or [])
+        pics = pick_images(scenes, story.get("images") or [], bool(story.get("creative")))
         progress("Собираю видео")
         files: dict[str, str | None] = {}
         for i, (img, length) in enumerate(zip(pics, lengths)):
