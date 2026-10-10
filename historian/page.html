@@ -33,6 +33,7 @@ button:disabled{opacity:.45;cursor:default}
 .meta .over{color:var(--bad);font-weight:600}.x{border:none;background:none;color:var(--muted);padding:0;font-weight:400;font-size:12px}
 .subject{font:600 19px/1.3 Georgia,serif;margin:0}
 .badge{display:inline-block;font-size:13px;font-weight:600;color:var(--good);border:1px solid currentColor;border-radius:999px;padding:1px 10px;margin:0 0 10px}
+.manual{border:1px solid var(--line);border-radius:10px;padding:4px 14px 12px;margin-top:14px}.manual li{margin:10px 0}.manual .hint{display:block}.manual .row{margin:8px 0 0;flex-wrap:wrap}
 .done .topic{margin-bottom:10px}.done a.open{font-weight:600}.topic{color:var(--muted);margin:2px 0 14px}
 a{color:inherit}
 .sources a{display:block;color:var(--muted);font-size:13px;word-break:break-all}
@@ -299,13 +300,49 @@ function renderDraft(){
     <div id="posts"></div>
     <button class="ghost" id="add">+ Добавить пост</button>
     <div class="sources" style="margin-top:14px">${(s.sources||[]).map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('')}</div>
-    <div class="row"><button id="pub">Опубликовать</button><span id="pubMsg" class="status"></span></div>
+    <div class="row"><button id="pub">Опубликовать</button><button class="ghost" id="man">Опубликовать через сайт</button><span id="pubMsg" class="status"></span></div>
+    <div id="manual"></div>
     <div class="vidbox" id="vid"></div>`;
   lastVid = ''; renderVideo();
   pic = s.image ?? null; renderPic();
   s.threads_posts.forEach(addPost);
   $('add').onclick = () => { addPost(''); editing = true; };
   $('pub').onclick = publish;
+  $('man').onclick = manual;
+}
+function edited(){
+  return {id: st.account.id, posts: [...document.querySelectorAll('#posts textarea')].map(t => t.value), draft: st.job.draft, image: pic};
+}
+async function copyText(text, btn){
+  try { await navigator.clipboard.writeText(text); }
+  catch(e){ const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+  btn.textContent = 'Скопировано ✓';
+}
+// Публикация без API: Threads открывается с готовым первым постом, человек сам жмёт «Опубликовать».
+async function manual(){
+  const box = $('manual'), body = edited();
+  box.innerHTML = '<p class="status"><span class="spin"></span>Готовлю пост…</p>';
+  let r;
+  try { r = await api('/api/manual/prepare', body); }
+  catch(e){ box.innerHTML = ''; say($('pubMsg'), e.message, 'err'); return; }
+  editing = true;  // пока открыта инструкция, не перерисовываем черновик
+  const intent = 'https://www.threads.net/intent/post?text=' + encodeURIComponent(r.posts[0]);
+  const rest = r.posts.slice(1);
+  box.innerHTML = `<div class="manual"><ol>
+    <li><a class="open" href="${esc(intent)}" target="_blank" rel="noopener">Открыть Threads с первым постом →</a>
+      <span class="hint">Войдите в нужный аккаунт Threads в браузере, если ещё не вошли.</span></li>
+    ${r.image_url ? `<li>Добавьте картинку: ${r.image_file && r.can_open ? '<button class="ghost" id="manImg">Показать картинку в папке</button> и перетащите её в окно поста'
+      : `<a href="${esc(r.image_url)}" target="_blank" rel="noopener">откройте её</a>, сохраните и прикрепите к посту`}.</li>` : ''}
+    ${rest.length ? `<li>Нажмите «Добавить в цепочку» и вставьте остальные посты по порядку:
+      <div class="row">${rest.map((_, i) => `<button class="ghost" data-i="${i}">Скопировать пост ${i + 2}</button>`).join('')}</div></li>` : ''}
+    <li>Нажмите «Опубликовать» в Threads, затем здесь: <button id="manDone">Я опубликовал</button></li>
+    </ol><span id="manMsg" class="status"></span></div>`;
+  box.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => copyText(rest[+b.dataset.i], b));
+  if($('manImg')) $('manImg').onclick = () => api('/api/manual/image', {id: st.account.id}).catch(e => alert(e.message));
+  $('manDone').onclick = async () => {
+    try { await api('/api/manual/done', body); editing = false; await refresh(); }
+    catch(e){ say($('manMsg'), e.message, 'err'); }
+  };
 }
 function renderPic(){
   const s = st.job.story, opts = s.images || [], img = pic === null ? null : opts[pic];
@@ -495,8 +532,7 @@ async function refresh(){
   renderStatus();
 }
 async function publish(){
-  const posts = [...document.querySelectorAll('#posts textarea')].map(t => t.value);
-  try { await api('/api/publish', {id: st.account.id, posts, draft: st.job.draft, image: pic}); editing = false; await refresh(); }
+  try { await api('/api/publish', edited()); editing = false; await refresh(); }
   catch(e){ say($('pubMsg'), e.message, 'err'); }
 }
 $('gen').onclick = async () => {
