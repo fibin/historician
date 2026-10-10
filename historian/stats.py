@@ -75,6 +75,8 @@ def refresh(acc, now: datetime | None = None, force: bool = False) -> dict:
                 fresh[post_id] = threads_pub.post_insights(creds, post_id)
     except threads_pub.NoPermission:
         data["error"] = NO_PERMISSION
+    except threads_pub.AccessBlocked as e:
+        data["error"] = str(e)
     except Exception as e:  # сеть, удалённый пост, истёкший токен: попробуем в следующий раз
         print(f"[{acc.name}] не удалось получить статистику Threads: {e}", file=sys.stderr)
         data["error"] = f"Не удалось получить статистику: {e}"

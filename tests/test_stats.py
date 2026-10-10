@@ -103,3 +103,15 @@ def test_insights_parse_api_shapes(monkeypatch):
         raise AssertionError("expected NoPermission")
     except threads_pub.NoPermission:
         pass
+
+
+def test_access_blocked_is_not_a_permission_problem(monkeypatch):
+    from historian.config import ThreadsCredentials
+    monkeypatch.undo()
+    blocked = _Resp(400, {"error": {"message": "API access blocked.", "type": "OAuthException", "code": 200}})
+    monkeypatch.setattr(threads_pub.requests, "post", lambda url, params, timeout: blocked)
+    try:
+        threads_pub.post_thread(ThreadsCredentials("42", "tok"), ["текст"])
+        raise AssertionError("expected AccessBlocked")
+    except threads_pub.AccessBlocked as e:
+        assert "Статус аккаунта" in str(e)
