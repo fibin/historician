@@ -98,17 +98,23 @@ def generate_for(acc: accounts.Account, engine: str | None = None) -> dict:
                     (acc.posts_min, acc.posts_max), acc.image_source, acc.creative)
 
 
+def final_posts(story: dict) -> list[str]:
+    """Посты в том виде, в каком они выйдут: с подписью автора картинки в конце, если лицензия её требует."""
+    img = images.chosen(story)
+    posts = list(story["threads_posts"])
+    if img and images.credit(img):
+        posts[-1] = posts[-1].rstrip() + "\n\n" + images.credit(img)
+        posts = fit(posts, THREADS_LIMIT, plain_length)
+    return posts
+
+
 def publish(story: dict, creds: ThreadsCredentials | None) -> dict:
     from .publishers import threads as threads_pub
 
     if not creds:
         raise SystemExit("У этого аккаунта нет ID и токена Threads")
     img = images.chosen(story)
-    posts = list(story["threads_posts"])
-    if img and images.credit(img):
-        posts[-1] = posts[-1].rstrip() + "\n\n" + images.credit(img)
-        posts = fit(posts, THREADS_LIMIT, plain_length)
-    ids = threads_pub.post_thread(creds, posts, image_url=img and img["url"])
+    ids = threads_pub.post_thread(creds, final_posts(story), image_url=img and img["url"])
     posted = {"threads": ids[0]}
     if img:
         posted["image"] = img["page"]
@@ -146,6 +152,16 @@ def publish_and_record(acc: accounts.Account, story: dict) -> dict:
     posted["link"] = permalink(acc, posted["threads"])
     history.save(acc.history_path, history.add(acc.history(), story, posted))
     return posted
+
+
+def record_manual(acc: accounts.Account, story: dict) -> None:
+    """Пост опубликован вручную через сайт Threads: записываем в журнал, чтобы тема не повторилась
+    и дневной лимит учёл этот пост. id поста нет, поэтому статистика по нему не собирается."""
+    img = images.chosen(story)
+    posted = {"manual": True}
+    if img:
+        posted["image"] = img["page"]
+    history.save(acc.history_path, history.add(acc.history(), story, posted))
 
 
 def print_preview(story: dict) -> None:

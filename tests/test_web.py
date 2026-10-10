@@ -279,3 +279,31 @@ def test_stop_generation_leaves_no_draft_and_frees_the_account(monkeypatch):
     while web.jobs[acc.id]["status"] == "generating" and time.time() < deadline:
         time.sleep(0.02)
     assert web.state(acc.id)["job"]["story"]["subject"] == "Тихо Браге"
+
+
+def test_manual_publish_through_the_site(me, monkeypatch):
+    acc = accounts.ensure()[0]
+    web.save_token(acc.id, "", "tok")
+    acc = accounts.get(acc.id)
+
+    class Img:
+        content = b"jpg"
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(web.images.requests, "get", lambda url, **kw: Img())
+    img = {"url": "https://u/0.jpg", "page": "p0", "attribution": True, "author": "Ann", "license": "CC BY 4.0"}
+    main.save_draft({**STORY, "images": [img], "image": 0}, acc.out_dir)
+    job = web.job_for(acc)
+    r = web.manual_prepare(acc, ["Один", "Два"], 0)
+    assert r["posts"] == ["Один", "Два\n\n🖼 Ann, CC BY 4.0, Wikimedia Commons"] and r["image_file"]
+    with open(web.manual_image_path(acc, job["draft"]), "rb") as f:
+        assert f.read() == b"jpg"
+    assert not job["published"]
+    web.manual_done(acc, *web._edited(acc, {"posts": ["Один", "Два"], "image": 0}))
+    entry = acc.history()[-1]
+    assert entry["posted"] == {"manual": True, "image": "p0"} and accounts.posted_today(acc)
+    assert job["published"] and (job["link"], job["link_kind"]) == ("https://www.threads.net/@hist", "profile")
+    with pytest.raises(ValueError):  # второй раз тот же черновик не отмечается
+        web._edited(acc, {"posts": ["Один"]})

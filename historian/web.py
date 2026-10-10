@@ -308,6 +308,66 @@ def do_publish(account_id: str, job: dict, posts: list[str], image: int | None =
         _find_link(acc, job, story, None)
 
 
+def _edited(acc: accounts.Account, body: dict) -> tuple[list[str], int | None]:
+    """Посты и выбранная картинка из окна, с проверкой, что черновик тот же и ещё не опубликован."""
+    posts = [p.strip() for p in body.get("posts", []) if p.strip()]
+    job = job_for(acc)
+    if job["status"] in BUSY:
+        raise ValueError("Дождитесь, пока закончится текущая работа")
+    if not job["story"] or not posts:
+        raise ValueError("Нет черновика для публикации")
+    if body.get("draft") and body["draft"] != job["draft"]:
+        raise ValueError("Пока вы правили посты, появился новый черновик. Обновите страницу.")
+    if job["published"]:
+        raise ValueError("Этот черновик уже опубликован")
+    image = body.get("image")
+    if image is not None and not (isinstance(image, int) and 0 <= image < len(job["story"].get("images") or [])):
+        raise ValueError("Такой картинки нет в черновике")
+    return posts, image
+
+
+def manual_image_path(acc: accounts.Account, draft: str | None) -> str | None:
+    """Картинка для ручной публикации лежит рядом с видео: accounts/<id>/video/<черновик>.jpg."""
+    path = video_path(acc, draft)
+    return path and os.path.splitext(path)[0] + ".jpg"
+
+
+def manual_prepare(acc: accounts.Account, posts: list[str], image: int | None) -> dict:
+    """Ручная публикация через сайт Threads: сохраняет правки, скачивает картинку в файл
+    и отдаёт посты в том виде, в каком их надо вставить."""
+    job = job_for(acc)
+    story = main.fit_story(dict(job["story"], threads_posts=posts, image=image))
+    if job["draft"]:
+        main.save_draft(story, acc.out_dir, job["draft"])
+    job["story"] = story
+    img, image_file = images.chosen(story), False
+    if img:
+        path = manual_image_path(acc, job["draft"])
+        try:
+            r = images.requests.get(img["url"], headers={"User-Agent": images.BROWSER_UA}, timeout=120)
+            r.raise_for_status()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(r.content)
+            image_file = True
+        except Exception as e:
+            print(f"[{acc.name}] не удалось скачать картинку: {e}", file=sys.stderr)
+    return {"posts": main.final_posts(story), "image_file": image_file, "image_url": img and img["url"],
+            "can_open": os.name == "nt"}
+
+
+def manual_done(acc: accounts.Account, posts: list[str], image: int | None) -> None:
+    """Пользователь сам опубликовал пост на сайте Threads: отмечаем черновик опубликованным."""
+    job = job_for(acc)
+    story = main.fit_story(dict(job["story"], threads_posts=posts, image=image))
+    main.check_not_recent(story, acc.history())
+    main.record_manual(acc, story)
+    if job["draft"]:
+        main.save_draft(story, acc.out_dir, job["draft"])
+    job.update(story=story, published=True, published_on=date.today().isoformat(), link=None)
+    _find_link(acc, job, story, None)
+
+
 def find_image(account_id: str) -> dict:
     """Искать картинку заново для открытого черновика (например, сделанного до появления картинок)."""
     acc = accounts.get(account_id)
@@ -484,20 +544,26 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/generate/stop":
                 return self._send(200, {"ok": stop_generation(acc_id)})
             if self.path == "/api/publish":
-                posts = [p.strip() for p in body.get("posts", []) if p.strip()]
                 acc = accounts.get(acc_id)
-                job = job_for(acc)
-                if not job["story"] or not posts:
-                    raise ValueError("Нет черновика для публикации")
-                if body.get("draft") and body["draft"] != job["draft"]:
-                    raise ValueError("Пока вы правили посты, появился новый черновик. Обновите страницу.")
+                posts, image = _edited(acc, body)
                 if not acc.creds():
                     raise ValueError("Сначала сохраните токен Threads для этого аккаунта")
-                image = body.get("image")
-                if image is not None and not (isinstance(image, int) and 0 <= image < len(job["story"].get("images") or [])):
-                    raise ValueError("Такой картинки нет в черновике")
                 ok = _run(acc_id, "publishing", lambda job: do_publish(acc_id, job, posts, image))
                 return self._send(200 if ok else 409, {"ok": ok})
+            if self.path == "/api/manual/prepare":
+                acc = accounts.get(acc_id)
+                return self._send(200, manual_prepare(acc, *_edited(acc, body)))
+            if self.path == "/api/manual/image":
+                acc = accounts.get(acc_id)
+                path = manual_image_path(acc, job_for(acc)["draft"])
+                if not path or not os.path.exists(path):
+                    raise ValueError("Картинка ещё не скачана")
+                open_folder(path)
+                return self._send(200, {"ok": True})
+            if self.path == "/api/manual/done":
+                acc = accounts.get(acc_id)
+                manual_done(acc, *_edited(acc, body))
+                return self._send(200, {"ok": True})
             if self.path == "/api/image/find":
                 return self._send(200, find_image(acc_id))
             if self.path == "/api/video":
