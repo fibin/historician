@@ -90,6 +90,17 @@ class NoPermission(RuntimeError):
     """У токена нет нужного разрешения: надо добавить его в приложении Meta и получить новый токен."""
 
 
+BLOCKED = ("Threads заблокировал доступ через API (ответ Meta: «API access blocked»). Это ограничение на стороне Meta: "
+           "либо на сам аккаунт Threads (часто у новых аккаунтов), либо на приложение в developers.facebook.com. "
+           "Откройте Threads и проверьте уведомления и «Статус аккаунта», затем зайдите в приложение на "
+           "developers.facebook.com и посмотрите, нет ли там предупреждений. Пока блок не снят, публиковать "
+           "и смотреть статистику не получится; повторные попытки не помогут.")
+
+
+class AccessBlocked(RuntimeError):
+    """Meta закрыла доступ к API для этого аккаунта или приложения (код 200, «API access blocked»)."""
+
+
 def _get(url: str, params: dict) -> dict:
     return _check(requests.get(url, params=params, timeout=30))
 
@@ -101,6 +112,8 @@ def _check(r) -> dict:
         except ValueError:
             err = {}
         code = err.get("code")
+        if "access blocked" in str(err.get("message", "")).lower():
+            raise AccessBlocked(BLOCKED)
         if code == 10 or (isinstance(code, int) and 200 <= code < 300) or "permission" in str(err.get("message", "")).lower():
             raise NoPermission(err.get("message") or r.text)
         raise RuntimeError(f"Threads API {r.status_code}: {r.text}")
